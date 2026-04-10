@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+
+# Go
+/packages/worker/bin/
+/packages/worker/tmp/
+
+# OS
+.DS_Store

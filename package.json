@@ -1,0 +1,8 @@
+{
+  "name": "koe",
+  "private": true,
+  "scripts": {
+    "dev:api": "pnpm --filter @koe/api dev",
+    "deploy:api": "pnpm --filter @koe/api deploy"
+  }
+}
