@@ -3,6 +3,18 @@
   "private": true,
   "scripts": {
     "dev:api": "pnpm --filter @koe/api dev",
-    "deploy:api": "pnpm --filter @koe/api deploy"
+    "deploy:api": "pnpm --filter @koe/api deploy",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "typecheck": "pnpm --filter @koe/api typecheck",
+    "test": "pnpm test:api && pnpm test:worker",
+    "test:api": "pnpm --filter @koe/api test",
+    "test:worker": "cd packages/worker && mise x -- go test ./..."
+  },
+  "devDependencies": {
+    "oxfmt": "^0.44.0",
+    "oxlint": "^1.59.0"
   }
 }
