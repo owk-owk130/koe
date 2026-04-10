@@ -31,16 +31,16 @@ packages/
 
 ### 技術スタック
 
-| レイヤー | 技術 |
-|---------|------|
-| API | Cloudflare Workers + Hono (TypeScript) |
-| 音声処理 | Go (Workers Containers / ローカル CLI / MCP) |
-| 文字起こし | Workers AI Whisper (@cf/openai/whisper-large-v3-turbo)、OpenAI互換で差し替え可能 |
-| トピック分割 | Gemini Flash-Lite（デフォルト）、interface で差し替え可能 |
-| DB | Cloudflare D1 |
-| Storage | Cloudflare R2 |
-| 認証 | Google OAuth (Device Flow) → JWT |
-| フロント | Astro + React (CF Pages) ※後回し |
+| レイヤー     | 技術                                                                             |
+| ------------ | -------------------------------------------------------------------------------- |
+| API          | Cloudflare Workers + Hono (TypeScript)                                           |
+| 音声処理     | Go (Workers Containers / ローカル CLI / MCP)                                     |
+| 文字起こし   | Workers AI Whisper (@cf/openai/whisper-large-v3-turbo)、OpenAI互換で差し替え可能 |
+| トピック分割 | Gemini Flash-Lite（デフォルト）、interface で差し替え可能                        |
+| DB           | Cloudflare D1                                                                    |
+| Storage      | Cloudflare R2                                                                    |
+| 認証         | Google OAuth (Device Flow) → JWT                                                 |
+| フロント     | Astro + React (CF Pages) ※後回し                                                 |
 
 ### API 設計
 
@@ -93,4 +93,5 @@ pending → splitting → transcribing → analyzing → completed
 
 - パッケージマネージャーは pnpm を使用
 - コード修正後は test / lint / format を実行
+- テスト駆動開発（TDD）で進める（Red → Green → Refactor）
 - YAGNI 原則に従い余計な機能は実装しない

@@ -76,11 +76,11 @@ pnpm deploy:api
 
 ## Environment Variables
 
-| Variable | Description |
-|----------|-------------|
-| `GEMINI_API_KEY` | Gemini API key (トピック分割) |
+| Variable           | Description                                |
+| ------------------ | ------------------------------------------ |
+| `GEMINI_API_KEY`   | Gemini API key (トピック分割)              |
 | `WHISPER_BASE_URL` | Whisper API endpoint (default: Workers AI) |
-| `WHISPER_API_KEY` | Whisper API key |
+| `WHISPER_API_KEY`  | Whisper API key                            |
 
 ## License
 
