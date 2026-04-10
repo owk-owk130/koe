@@ -7,11 +7,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "hono": "^4"
+    "hono": "^4.12"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4",
-    "typescript": "^5",
-    "wrangler": "^4"
+    "@cloudflare/workers-types": "^4.20260410",
+    "typescript": "^5.9",
+    "wrangler": "^4.81"
   }
 }
