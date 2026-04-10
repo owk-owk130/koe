@@ -1,0 +1,20 @@
+{
+  "name": "@koe/api",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "hono": "^4.12"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.14.3",
+    "@cloudflare/workers-types": "^4.20260410",
+    "typescript": "^5.9",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.81"
+  }
+}
