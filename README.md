@@ -103,13 +103,25 @@ pnpm deploy:api
 
 ## Environment Variables
 
-| Variable           | Description                                          |
-| ------------------ | ---------------------------------------------------- |
-| `WHISPER_API_KEY`  | Whisper API key                                      |
+### Go Worker (CLI / MCP)
+
+| Variable           | Description                                              |
+| ------------------ | -------------------------------------------------------- |
+| `WHISPER_API_KEY`  | Whisper API key                                          |
 | `WHISPER_BASE_URL` | Whisper API endpoint (default: `https://api.openai.com`) |
-| `WHISPER_MODEL`    | Whisper model name (default: `whisper-1`)            |
-| `GEMINI_API_KEY`   | Gemini API key (トピック分割、MCP では任意)          |
-| `GEMINI_MODEL`     | Gemini model name (default: `gemini-2.0-flash-lite`) |
+| `WHISPER_MODEL`    | Whisper model name (default: `whisper-1`)                |
+| `GEMINI_API_KEY`   | Gemini API key (トピック分割、MCP では任意)              |
+| `GEMINI_MODEL`     | Gemini model name (default: `gemini-2.0-flash-lite`)     |
+
+### Workers API
+
+| Variable               | Type   | Description                |
+| ---------------------- | ------ | -------------------------- |
+| `GOOGLE_CLIENT_ID`     | vars   | Google OAuth client ID     |
+| `GOOGLE_CLIENT_SECRET` | secret | Google OAuth client secret |
+| `JWT_SECRET`           | secret | JWT signing key (HS256)    |
+
+Workers secrets は `wrangler secret put` で設定。ローカル開発は `packages/api/.dev.vars` を使用。
 
 ## License
 

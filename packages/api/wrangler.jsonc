@@ -3,22 +3,19 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-04-01",
 
-  // "vars": {
-  //   "API_KEY": ""
-  // },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "koe-db",
+      "database_id": "placeholder",
+      "migrations_dir": "../../db/migrations",
+    },
+  ],
 
-  // "d1_databases": [
-  //   {
-  //     "binding": "DB",
-  //     "database_name": "koe-db",
-  //     "database_id": ""
-  //   }
-  // ],
-
-  // "r2_buckets": [
-  //   {
-  //     "binding": "BUCKET",
-  //     "bucket_name": "koe-storage"
-  //   }
-  // ]
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "koe-storage",
+    },
+  ],
 }
