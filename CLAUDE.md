@@ -13,8 +13,8 @@ CLI / MCP Client
 Workers (Hono/TS) ── API / 認証
     │                   ├── R2 (音声ファイル + テキスト結果)
     │                   └── D1 (ジョブ/チャンク/トピックのメタ情報)
-    ▼ getContainer()
-Workers Containers (Go)
+    ▼ DurableObject (KoeProcessor) ── alarm パターンで非同期ジョブ処理
+Workers Containers (Go HTTP :8080)
     ├── ffmpeg 音声分割
     ├── Whisper (Workers AI / OpenAI互換)
     └── LLM トピック分割 (Gemini Flash-Lite)
@@ -49,10 +49,16 @@ packages/
 POST /api/v1/transcribe        # 音声→テキスト、保存しない（optionalAuth）
 
 # 認証あり（ステートフル）
-POST /api/v1/jobs              # ジョブ作成（文字起こし+トピック分割+保存）
+POST /api/v1/jobs              # ジョブ作成（文字起こし+トピック分割+保存）→ DO alarm で非同期処理
 GET  /api/v1/jobs              # ジョブ一覧（自分のだけ）
 GET  /api/v1/jobs/:id          # ジョブ詳細
 GET  /api/v1/jobs/:id/topics   # トピック一覧
+
+# R2 Multipart Upload（大容量音声）
+POST /api/v1/uploads                        # アップロード開始
+PUT  /api/v1/uploads/:uploadId/parts/:num   # パーツアップロード
+POST /api/v1/uploads/:uploadId/complete      # 完了
+DELETE /api/v1/uploads/:uploadId             # 中止
 
 # 認証
 GET  /auth/device              # Device Flow 開始
@@ -74,9 +80,9 @@ POST /auth/token               # トークン交換
 ### ジョブ状態遷移
 
 ```
-pending → splitting → transcribing → analyzing → completed
-   ↓         ↓            ↓             ↓
- failed    failed       failed        failed
+pending → processing → completed
+   ↓          ↓
+ failed     failed (リトライ max 3回、指数バックオフ)
 ```
 
 ### 設計方針
