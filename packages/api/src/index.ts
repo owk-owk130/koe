@@ -1,18 +1,20 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { onError } from "./lib/errors";
+import authRoutes from "./routes/auth";
+import jobsRoutes from "./routes/jobs";
+import transcribeRoutes from "./routes/transcribe";
+import type { Env } from "./types";
 
-type Bindings = {
-  // DB: D1Database
-  // BUCKET: R2Bucket
-};
+const app = new Hono<Env>();
 
-const app = new Hono<{ Bindings: Bindings }>();
+app.use("/*", cors());
+app.onError(onError);
 
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-// TODO: POST /api/v1/transcribe (public, optionalAuth)
-// TODO: POST /api/v1/jobs (requireAuth)
-// TODO: GET  /api/v1/jobs (requireAuth)
-// TODO: GET  /api/v1/jobs/:id (requireAuth)
-// TODO: GET  /api/v1/jobs/:id/topics (requireAuth)
+app.route("/auth", authRoutes);
+app.route("/api/v1/jobs", jobsRoutes);
+app.route("/api/v1/transcribe", transcribeRoutes);
 
 export default app;
