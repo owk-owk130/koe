@@ -18,4 +18,28 @@
       "bucket_name": "koe-storage",
     },
   ],
+
+  "containers": [
+    {
+      "class_name": "KoeProcessor",
+      "image": "../worker/Dockerfile",
+      "max_instances": 3,
+    },
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PROCESSOR",
+        "class_name": "KoeProcessor",
+      },
+    ],
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["KoeProcessor"],
+    },
+  ],
 }

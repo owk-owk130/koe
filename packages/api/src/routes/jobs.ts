@@ -9,6 +9,7 @@ import {
   listJobsByUser,
 } from "../repositories/job-repository";
 import { uploadAudio } from "../services/r2-storage";
+import { enqueueJob } from "../services/container-service";
 
 const jobs = new Hono<Env>();
 
@@ -33,6 +34,21 @@ jobs.post("/", async (c) => {
     userId: user.id,
     audioKey,
   });
+
+  // Enqueue background processing via DurableObject alarm
+  try {
+    if (c.env.PROCESSOR) {
+      c.executionCtx.waitUntil(
+        enqueueJob(c.env.PROCESSOR, {
+          jobId: job.id,
+          userId: user.id,
+          audioKey,
+        }),
+      );
+    }
+  } catch {
+    // executionCtx not available (e.g. in tests) — job stays pending
+  }
 
   return c.json(
     {

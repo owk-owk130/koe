@@ -15,4 +15,6 @@ RUN apk add --no-cache ffmpeg
 
 COPY --from=builder /koe-server /usr/local/bin/koe-server
 
+EXPOSE 8080
+
 ENTRYPOINT ["koe-server"]

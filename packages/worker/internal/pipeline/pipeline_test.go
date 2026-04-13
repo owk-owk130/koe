@@ -93,6 +93,23 @@ func TestPipeline_Run(t *testing.T) {
 	if result.Transcript.Text != wantText {
 		t.Errorf("expected text %q, got %q", wantText, result.Transcript.Text)
 	}
+
+	if len(result.Chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(result.Chunks))
+	}
+
+	if result.Chunks[0].Index != 0 || result.Chunks[0].StartSec != 0 || result.Chunks[0].EndSec != 30 {
+		t.Errorf("unexpected chunk[0]: %+v", result.Chunks[0])
+	}
+	if result.Chunks[0].Text != "hello world" {
+		t.Errorf("expected chunk[0] text %q, got %q", "hello world", result.Chunks[0].Text)
+	}
+	if result.Chunks[1].Index != 1 || result.Chunks[1].StartSec != 30 || result.Chunks[1].EndSec != 60 {
+		t.Errorf("unexpected chunk[1]: %+v", result.Chunks[1])
+	}
+	if result.Chunks[1].Text != "goodbye world" {
+		t.Errorf("expected chunk[1] text %q, got %q", "goodbye world", result.Chunks[1].Text)
+	}
 }
 
 func TestPipeline_Run_SplitterError(t *testing.T) {

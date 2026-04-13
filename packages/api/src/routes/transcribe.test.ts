@@ -18,15 +18,30 @@ beforeAll(async () => {
 });
 
 describe("POST /api/v1/transcribe", () => {
-  it("returns 501 Not Implemented", async () => {
-    const res = await app.request("/api/v1/transcribe", { method: "POST" }, makeEnv());
-    expect(res.status).toBe(501);
+  it("returns 400 without audio file", async () => {
+    const form = new FormData();
+    const res = await app.request("/api/v1/transcribe", { method: "POST", body: form }, makeEnv());
+    expect(res.status).toBe(400);
     const body = await res.json<{ error: { code: string } }>();
-    expect(body.error.code).toBe("NOT_IMPLEMENTED");
+    expect(body.error.code).toBe("BAD_REQUEST");
   });
 
-  it("works without auth token", async () => {
-    const res = await app.request("/api/v1/transcribe", { method: "POST" }, makeEnv());
+  it("returns 501 when PROCESSOR binding is not available", async () => {
+    const envWithoutProcessor = { ...makeEnv(), PROCESSOR: undefined };
+    const form = new FormData();
+    form.append("audio", new File([new Uint8Array([1, 2, 3])], "test.mp3"));
+    const res = await app.request(
+      "/api/v1/transcribe",
+      { method: "POST", body: form },
+      envWithoutProcessor,
+    );
     expect(res.status).toBe(501);
+  });
+
+  it("works without auth token (optionalAuth)", async () => {
+    const form = new FormData();
+    const res = await app.request("/api/v1/transcribe", { method: "POST", body: form }, makeEnv());
+    // Should get 400 (no audio) not 401 (unauthorized)
+    expect(res.status).toBe(400);
   });
 });
