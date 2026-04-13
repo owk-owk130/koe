@@ -65,6 +65,8 @@ export class KoeProcessor extends DurableObject<Bindings> {
       const retries = (job.retries ?? 0) + 1;
 
       if (retries <= MAX_RETRIES) {
+        // Reset status to pending so the next retry can proceed
+        await updateJobStatus(this.env.DB, job.jobId, "pending");
         await this.ctx.storage.put("job", { ...job, retries });
         await this.ctx.storage.setAlarm(Date.now() + retries * 30_000);
       } else {
