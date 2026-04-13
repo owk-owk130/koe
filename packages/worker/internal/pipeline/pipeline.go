@@ -16,10 +16,19 @@ type Input struct {
 	UserID    string
 }
 
+// ChunkResult represents a processed audio chunk with its transcript.
+type ChunkResult struct {
+	Index    int     `json:"index"`
+	StartSec float64 `json:"start_sec"`
+	EndSec   float64 `json:"end_sec"`
+	Text     string  `json:"text"`
+}
+
 // Result represents the output of a pipeline run.
 type Result struct {
-	Transcript whisper.Transcript
-	Topics     []topic.Topic
+	Transcript whisper.Transcript `json:"transcript"`
+	Topics     []topic.Topic      `json:"topics"`
+	Chunks     []ChunkResult      `json:"chunks"`
 }
 
 // Pipeline orchestrates audio splitting, transcription, and topic analysis.
@@ -41,6 +50,7 @@ func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
 	// 2. Transcribe each chunk
 	var allSegments []whisper.Segment
 	var fullText string
+	chunkResults := make([]ChunkResult, 0, len(chunks))
 
 	for _, chunk := range chunks {
 		t, err := p.Transcriber.Transcribe(ctx, chunk.Path)
@@ -49,6 +59,12 @@ func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
 		}
 		fullText += t.Text + "\n"
 		allSegments = append(allSegments, t.Segments...)
+		chunkResults = append(chunkResults, ChunkResult{
+			Index:    chunk.Index,
+			StartSec: chunk.StartSec,
+			EndSec:   chunk.EndSec,
+			Text:     t.Text,
+		})
 	}
 
 	transcript := whisper.Transcript{
@@ -65,5 +81,6 @@ func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
 	return &Result{
 		Transcript: transcript,
 		Topics:     topics,
+		Chunks:     chunkResults,
 	}, nil
 }
