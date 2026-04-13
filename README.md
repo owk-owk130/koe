@@ -67,6 +67,33 @@ cd packages/worker
 go run ./cmd/cli <audio-file.mp3>
 ```
 
+### MCP Server
+
+Claude Desktop / Claude Code から利用する場合:
+
+```bash
+cd packages/worker
+go run ./cmd/mcp
+```
+
+MCP 設定例:
+
+```json
+{
+  "mcpServers": {
+    "koe": {
+      "command": "go",
+      "args": ["run", "./cmd/mcp"],
+      "cwd": "/path/to/koe/packages/worker",
+      "env": {
+        "WHISPER_API_KEY": "your-key",
+        "GEMINI_API_KEY": "your-key"
+      }
+    }
+  }
+}
+```
+
 ### Deploy
 
 ```bash
@@ -81,7 +108,7 @@ pnpm deploy:api
 | `WHISPER_API_KEY`  | Whisper API key                                      |
 | `WHISPER_BASE_URL` | Whisper API endpoint (default: `https://api.openai.com`) |
 | `WHISPER_MODEL`    | Whisper model name (default: `whisper-1`)            |
-| `GEMINI_API_KEY`   | Gemini API key (トピック分割)                        |
+| `GEMINI_API_KEY`   | Gemini API key (トピック分割、MCP では任意)          |
 | `GEMINI_MODEL`     | Gemini model name (default: `gemini-2.0-flash-lite`) |
 
 ## License
