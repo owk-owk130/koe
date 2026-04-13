@@ -76,11 +76,13 @@ pnpm deploy:api
 
 ## Environment Variables
 
-| Variable           | Description                                |
-| ------------------ | ------------------------------------------ |
-| `GEMINI_API_KEY`   | Gemini API key (トピック分割)              |
-| `WHISPER_BASE_URL` | Whisper API endpoint (default: Workers AI) |
-| `WHISPER_API_KEY`  | Whisper API key                            |
+| Variable           | Description                                          |
+| ------------------ | ---------------------------------------------------- |
+| `WHISPER_API_KEY`  | Whisper API key                                      |
+| `WHISPER_BASE_URL` | Whisper API endpoint (default: `https://api.openai.com`) |
+| `WHISPER_MODEL`    | Whisper model name (default: `whisper-1`)            |
+| `GEMINI_API_KEY`   | Gemini API key (トピック分割)                        |
+| `GEMINI_MODEL`     | Gemini model name (default: `gemini-2.0-flash-lite`) |
 
 ## License
 

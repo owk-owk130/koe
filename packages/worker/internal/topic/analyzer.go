@@ -8,12 +8,12 @@ import (
 
 // Topic represents a detected topic segment.
 type Topic struct {
-	Index      int
-	Title      string
-	Summary    string
-	StartSec   float64
-	EndSec     float64
-	Transcript string
+	Index      int     `json:"index"`
+	Title      string  `json:"title"`
+	Summary    string  `json:"summary"`
+	StartSec   float64 `json:"start_sec"`
+	EndSec     float64 `json:"end_sec"`
+	Transcript string  `json:"transcript"`
 }
 
 // Analyzer splits a transcript into topics using an LLM.
