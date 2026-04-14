@@ -11,7 +11,8 @@
     "format": "pnpm -w exec oxfmt --write .",
     "format:check": "pnpm -w exec oxfmt --check .",
     "typecheck": "pnpm --filter @koe/api typecheck",
-    "test": "pnpm test:api && pnpm test:worker",
+    "test": "pnpm test:shared && pnpm test:api && pnpm test:worker",
+    "test:shared": "pnpm --filter @koe/shared test",
     "test:api": "pnpm --filter @koe/api test",
     "test:worker": "cd packages/worker && mise x -- go test ./..."
   },
