@@ -7,7 +7,7 @@ capture voice and shape it into structured thoughts.
 ## Architecture
 
 ```
-CLI / MCP Client
+Desktop App (Electron + React) / CLI / MCP Client
     │
     ▼
 Workers (Hono/TS) ── API / 認証
@@ -26,7 +26,8 @@ Workers Containers (Go)
 packages/
 ├── api/       # Cloudflare Workers + Hono (TypeScript)
 ├── worker/    # Go - 音声処理 (server / cli / mcp)
-└── web/       # Astro + React - ビューワー (TBD)
+├── shared/    # 共有ユーティリティ (format / auth / API client)
+└── desktop/   # Electron デスクトップアプリ
 ```
 
 ## Prerequisites
@@ -58,6 +59,12 @@ go build ./...
 
 ```bash
 pnpm dev:api
+```
+
+### Desktop App (Electron)
+
+```bash
+pnpm dev:desktop
 ```
 
 ### Go CLI

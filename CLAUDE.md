@@ -26,7 +26,8 @@ Workers Containers (Go HTTP :8080)
 packages/
 ├── api/       # Workers + Hono (TS) - API / 認証
 ├── worker/    # Go - 音声処理 (server / cli / mcp)
-└── web/       # Astro + React - ビューワー（後回し）
+├── shared/    # 共有ユーティリティ (format / auth / API client)
+└── desktop/   # Electron デスクトップアプリ
 ```
 
 ### 技術スタック
@@ -40,7 +41,7 @@ packages/
 | DB           | Cloudflare D1                                                                    |
 | Storage      | Cloudflare R2                                                                    |
 | 認証         | Google OAuth (Device Flow) → JWT                                                 |
-| フロント     | Astro + React (CF Pages) ※後回し                                                 |
+| フロント     | Electron + React (デスクトップアプリ)                                             |
 
 ### API 設計
 
