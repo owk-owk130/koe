@@ -14,7 +14,7 @@ export class AppError extends Error {
 
 export const onError: ErrorHandler<Env> = (err, c) => {
   if (err instanceof AppError) {
-    return c.json({ error: { code: err.code, message: err.message } }, err.status as 400);
+    return c.json({ error: { code: err.code, message: err.message } }, { status: err.status });
   }
 
   console.error("Unhandled error:", err);

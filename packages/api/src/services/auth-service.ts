@@ -74,10 +74,13 @@ export const exchangeDeviceCode = async (
 export const decodeGoogleIdToken = (idToken: string): GoogleUserInfo => {
   const { payload } = decode(idToken);
   const p = payload as Record<string, unknown>;
+  if (typeof p.sub !== "string" || typeof p.email !== "string") {
+    throw new Error("Invalid Google ID token: missing sub or email");
+  }
   return {
-    sub: p.sub as string,
-    email: p.email as string,
-    name: p.name as string | undefined,
+    sub: p.sub,
+    email: p.email,
+    name: typeof p.name === "string" ? p.name : undefined,
   };
 };
 
@@ -100,5 +103,15 @@ export const signToken = async (
 
 export const verifyToken = async (token: string, secret: string): Promise<JWTPayload> => {
   const payload = await verify(token, secret, "HS256");
-  return payload as unknown as JWTPayload;
+  const p = payload as Record<string, unknown>;
+  if (typeof p.sub !== "string" || typeof p.email !== "string" || typeof p.exp !== "number") {
+    throw new Error("Invalid token payload: missing required fields");
+  }
+  return {
+    sub: p.sub,
+    email: p.email,
+    name: typeof p.name === "string" ? p.name : undefined,
+    iat: p.iat as number,
+    exp: p.exp,
+  };
 };
