@@ -1,14 +1,29 @@
-import { app, BrowserWindow, ipcMain, desktopCapturer, systemPreferences } from "electron";
+import {
+  app,
+  BrowserWindow,
+  desktopCapturer,
+  dialog,
+  ipcMain,
+  shell,
+  systemPreferences,
+} from "electron";
 import { join } from "path";
+import { readFile, stat, writeFile } from "fs/promises";
+import { tmpdir } from "os";
 import { is } from "@electron-toolkit/utils";
+import Store from "electron-store";
+import { isTokenExpired, parseUser } from "@koe/shared";
+import { IPC } from "../shared/ipc-channels";
+
+const store = new Store<{ token?: string }>({ encryptionKey: "koe-desktop" });
 
 let mainWindow: BrowserWindow | null = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 800,
-    height: 600,
-    title: "koe - Audio PoC",
+    width: 960,
+    height: 680,
+    title: "koe",
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -22,41 +37,148 @@ function createWindow() {
   } else {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
+
+  // macOS: hide window instead of closing
+  mainWindow.on("close", (e) => {
+    if (process.platform === "darwin" && !app.isQuitting) {
+      e.preventDefault();
+      mainWindow?.hide();
+    }
+  });
 }
 
-// IPC: Get desktop capturer sources for system audio
-ipcMain.handle("audio:get-desktop-sources", async () => {
-  const sources = await desktopCapturer.getSources({
-    types: ["screen", "window"],
-  });
-  return sources.map((s) => ({
-    id: s.id,
-    name: s.name,
-    display_id: s.display_id,
-  }));
+// ---- Auth IPC ----
+
+ipcMain.handle(IPC.AUTH_GET_TOKEN, () => {
+  const token = store.get("token");
+  if (!token || isTokenExpired(token)) return null;
+  return token;
 });
 
-// IPC: Check macOS media access permissions
-ipcMain.handle("audio:check-permissions", async () => {
+ipcMain.handle(IPC.AUTH_SAVE_TOKEN, (_, token: string) => {
+  store.set("token", token);
+});
+
+ipcMain.handle(IPC.AUTH_CLEAR_TOKEN, () => {
+  store.delete("token");
+});
+
+ipcMain.handle(IPC.AUTH_GET_USER, () => {
+  const token = store.get("token");
+  if (!token || isTokenExpired(token)) return null;
+  return parseUser(token);
+});
+
+// ---- Audio IPC ----
+
+ipcMain.handle(IPC.AUDIO_GET_DESKTOP_SOURCES, async () => {
+  const sources = await desktopCapturer.getSources({ types: ["screen", "window"] });
+  return sources.map((s) => ({ id: s.id, name: s.name, display_id: s.display_id }));
+});
+
+ipcMain.handle(IPC.AUDIO_CHECK_PERMISSIONS, () => {
   if (process.platform !== "darwin") {
     return { microphone: true, screen: true };
   }
-  const micStatus = systemPreferences.getMediaAccessStatus("microphone");
-  const screenStatus = systemPreferences.getMediaAccessStatus("screen");
   return {
-    microphone: micStatus === "granted",
-    screen: screenStatus === "granted",
+    microphone: systemPreferences.getMediaAccessStatus("microphone") === "granted",
+    screen: systemPreferences.getMediaAccessStatus("screen") === "granted",
   };
 });
 
-// IPC: Request microphone permission (macOS)
-ipcMain.handle("audio:request-mic-permission", async () => {
+ipcMain.handle(IPC.AUDIO_REQUEST_MIC_PERMISSION, () => {
   if (process.platform !== "darwin") return true;
   return systemPreferences.askForMediaAccess("microphone");
 });
 
-app.whenReady().then(createWindow);
+// ---- Recording IPC ----
 
-app.on("window-all-closed", () => {
-  app.quit();
+ipcMain.handle(IPC.RECORDING_STATE_CHANGED, (_, state: string) => {
+  // Update tray icon/menu based on state (implemented in Step 7)
+  void state;
 });
+
+ipcMain.handle(IPC.RECORDING_SAVE, async (_, buffer: ArrayBuffer, filename: string) => {
+  const filePath = join(tmpdir(), `koe-${Date.now()}-${filename}`);
+  await writeFile(filePath, Buffer.from(buffer));
+  return filePath;
+});
+
+// ---- File system IPC ----
+
+ipcMain.handle(IPC.FS_SELECT_AUDIO_FILE, async () => {
+  if (!mainWindow) return null;
+  const result = await dialog.showOpenDialog(mainWindow, {
+    filters: [{ name: "Audio", extensions: ["mp3", "wav", "m4a", "ogg", "flac", "webm"] }],
+    properties: ["openFile"],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const filePath = result.filePaths[0];
+  const info = await stat(filePath);
+  return {
+    name: filePath.split("/").pop() ?? filePath,
+    size: info.size,
+    path: filePath,
+  };
+});
+
+ipcMain.handle(IPC.FS_READ_FILE, async (_, path: string) => {
+  const buf = await readFile(path);
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+});
+
+ipcMain.handle(IPC.FS_GET_FILE_INFO, async (_, path: string) => {
+  const info = await stat(path);
+  return {
+    name: path.split("/").pop() ?? path,
+    size: info.size,
+    path,
+  };
+});
+
+// ---- App IPC ----
+
+ipcMain.handle(IPC.APP_GET_VERSION, () => app.getVersion());
+
+ipcMain.handle(IPC.APP_OPEN_EXTERNAL, (_, url: string) => shell.openExternal(url));
+
+// ---- Upload IPC (stub — full implementation in Step 9) ----
+
+ipcMain.handle(IPC.UPLOAD_MULTIPART, async (_, _filePath: string, _token: string) => {
+  // TODO: Implement multipart upload from main process
+  return { jobId: "", status: "not_implemented" };
+});
+
+// ---- App lifecycle ----
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(createWindow);
+
+  app.on("activate", () => {
+    // macOS: re-show window when dock icon clicked
+    if (mainWindow) {
+      mainWindow.show();
+    }
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  });
+
+  app.on("before-quit", () => {
+    (app as typeof app & { isQuitting: boolean }).isQuitting = true;
+  });
+}
