@@ -14,7 +14,8 @@ uploads.post("/", async (c) => {
     throw new AppError(400, "BAD_REQUEST", "filename is required");
   }
 
-  const user = c.get("user")!;
+  const user = c.get("user");
+  if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
   const jobId = crypto.randomUUID();
   const ext = body.filename.split(".").pop() ?? "mp3";
   const key = `${user.id}/audio/${jobId}/original.${ext}`;
@@ -41,8 +42,12 @@ uploads.put("/:uploadId/parts/:partNumber", async (c) => {
     throw new AppError(400, "BAD_REQUEST", "invalid part number");
   }
 
+  if (!c.req.raw.body) {
+    throw new AppError(400, "BAD_REQUEST", "request body is required");
+  }
+
   const upload = c.env.BUCKET.resumeMultipartUpload(key, uploadId);
-  const part = await upload.uploadPart(partNumber, c.req.raw.body!);
+  const part = await upload.uploadPart(partNumber, c.req.raw.body);
 
   return c.json({
     part_number: part.partNumber,

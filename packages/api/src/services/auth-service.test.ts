@@ -26,28 +26,45 @@ describe("auth-service", () => {
   });
 
   describe("decodeGoogleIdToken", () => {
-    it("decodes a Google ID token payload", () => {
-      // Create a simple base64url-encoded JWT (header.payload.signature)
+    const makeToken = (payload: Record<string, unknown>) => {
       const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }))
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
         .replace(/=+$/, "");
-      const payload = btoa(
-        JSON.stringify({
-          sub: "google-123",
-          email: "user@gmail.com",
-          name: "Google User",
-        }),
-      )
+      const body = btoa(JSON.stringify(payload))
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
         .replace(/=+$/, "");
-      const fakeToken = `${header}.${payload}.fakesig`;
+      return `${header}.${body}.fakesig`;
+    };
 
-      const info = decodeGoogleIdToken(fakeToken);
+    it("decodes a Google ID token payload", () => {
+      const token = makeToken({
+        sub: "google-123",
+        email: "user@gmail.com",
+        name: "Google User",
+      });
+
+      const info = decodeGoogleIdToken(token);
       expect(info.sub).toBe("google-123");
       expect(info.email).toBe("user@gmail.com");
       expect(info.name).toBe("Google User");
+    });
+
+    it("throws on missing sub", () => {
+      const token = makeToken({ email: "user@gmail.com" });
+      expect(() => decodeGoogleIdToken(token)).toThrow("missing sub or email");
+    });
+
+    it("throws on missing email", () => {
+      const token = makeToken({ sub: "google-123" });
+      expect(() => decodeGoogleIdToken(token)).toThrow("missing sub or email");
+    });
+
+    it("handles missing name gracefully", () => {
+      const token = makeToken({ sub: "google-123", email: "user@gmail.com" });
+      const info = decodeGoogleIdToken(token);
+      expect(info.name).toBeUndefined();
     });
   });
 });

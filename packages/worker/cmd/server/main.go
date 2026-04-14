@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/pipeline"
 	"github.com/owk-owk130/koe/packages/worker/internal/server"
@@ -16,15 +17,21 @@ import (
 )
 
 func main() {
-	whisperURL := envOrDefault("WHISPER_BASE_URL", "https://api.openai.com")
+	whisperURL := os.Getenv("WHISPER_BASE_URL")
 	whisperKey := os.Getenv("WHISPER_API_KEY")
-	whisperModel := envOrDefault("WHISPER_MODEL", "whisper-1")
+	whisperModel := os.Getenv("WHISPER_MODEL")
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 	geminiModel := envOrDefault("GEMINI_MODEL", "gemini-2.0-flash-lite")
 	port := envOrDefault("PORT", "8080")
 
+	if whisperURL == "" {
+		log.Fatal("WHISPER_BASE_URL is required")
+	}
 	if whisperKey == "" {
 		log.Fatal("WHISPER_API_KEY is required")
+	}
+	if whisperModel == "" {
+		log.Fatal("WHISPER_MODEL is required")
 	}
 	if geminiKey == "" {
 		log.Fatal("GEMINI_API_KEY is required")
@@ -56,7 +63,9 @@ func main() {
 	go func() {
 		<-ctx.Done()
 		log.Println("Shutting down...")
-		srv.Close()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
 	}()
 
 	fmt.Fprintf(os.Stderr, "koe server listening on :%s\n", port)

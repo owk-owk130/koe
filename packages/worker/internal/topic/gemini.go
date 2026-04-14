@@ -99,12 +99,13 @@ func (g *GeminiAnalyzer) Analyze(ctx context.Context, transcript string, segment
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent?key=%s", g.baseURL(), g.Model, g.APIKey)
+	url := fmt.Sprintf("%s/v1beta/models/%s:generateContent", g.baseURL(), g.Model)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-goog-api-key", g.APIKey)
 
 	resp, err := g.httpClient().Do(req)
 	if err != nil {

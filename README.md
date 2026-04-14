@@ -86,8 +86,10 @@ MCP 設定例:
       "args": ["run", "./cmd/mcp"],
       "cwd": "/path/to/koe/packages/worker",
       "env": {
-        "WHISPER_API_KEY": "your-key",
-        "GEMINI_API_KEY": "your-key"
+        "WHISPER_BASE_URL": "https://api.cloudflare.com/client/v4/accounts/{your-account-id}/ai",
+        "WHISPER_API_KEY": "your-cloudflare-api-token",
+        "WHISPER_MODEL": "@cf/openai/whisper-large-v3-turbo",
+        "GEMINI_API_KEY": "your-gemini-api-key"
       }
     }
   }
@@ -105,26 +107,26 @@ pnpm deploy:api
 
 ### Go Worker (CLI / MCP)
 
-| Variable           | Description                                              |
-| ------------------ | -------------------------------------------------------- |
-| `WHISPER_API_KEY`  | Whisper API key                                          |
-| `WHISPER_BASE_URL` | Whisper API endpoint (default: `https://api.openai.com`) |
-| `WHISPER_MODEL`    | Whisper model name (default: `whisper-1`)                |
-| `GEMINI_API_KEY`   | Gemini API key (トピック分割、MCP では任意)              |
-| `GEMINI_MODEL`     | Gemini model name (default: `gemini-2.0-flash-lite`)     |
+| Variable           | Required | Description                                                                      |
+| ------------------ | -------- | -------------------------------------------------------------------------------- |
+| `WHISPER_BASE_URL` | Yes      | Cloudflare Workers AI: `https://api.cloudflare.com/client/v4/accounts/{id}/ai`   |
+| `WHISPER_API_KEY`  | Yes      | Cloudflare API token (Workers AI 権限)                                           |
+| `WHISPER_MODEL`    | Yes      | モデル名 (推奨: `@cf/openai/whisper-large-v3-turbo`)                             |
+| `GEMINI_API_KEY`   | CLI: Yes / MCP: No | Gemini API key (トピック分割、MCP では任意)                             |
+| `GEMINI_MODEL`     | No       | Gemini model name (default: `gemini-2.0-flash-lite`)                             |
 
 ### Workers API
 
-| Variable               | Type   | Description                                              |
-| ---------------------- | ------ | -------------------------------------------------------- |
-| `GOOGLE_CLIENT_ID`     | vars   | Google OAuth client ID                                   |
-| `GOOGLE_CLIENT_SECRET` | secret | Google OAuth client secret                               |
-| `JWT_SECRET`           | secret | JWT signing key (HS256)                                  |
-| `WHISPER_BASE_URL`     | vars   | Whisper API endpoint (default: `https://api.openai.com`) |
-| `WHISPER_API_KEY`      | secret | Whisper API key                                          |
-| `WHISPER_MODEL`        | vars   | Whisper model name (default: `whisper-1`)                |
-| `GEMINI_API_KEY`       | secret | Gemini API key                                           |
-| `GEMINI_MODEL`         | vars   | Gemini model name (default: `gemini-2.0-flash-lite`)     |
+| Variable               | Type   | Description                                                                    |
+| ---------------------- | ------ | ------------------------------------------------------------------------------ |
+| `GOOGLE_CLIENT_ID`     | vars   | Google OAuth client ID                                                         |
+| `GOOGLE_CLIENT_SECRET` | secret | Google OAuth client secret                                                     |
+| `JWT_SECRET`           | secret | JWT signing key (HS256)                                                        |
+| `WHISPER_BASE_URL`     | vars   | Cloudflare Workers AI: `https://api.cloudflare.com/client/v4/accounts/{id}/ai` |
+| `WHISPER_API_KEY`      | secret | Cloudflare API token (Workers AI 権限)                                         |
+| `WHISPER_MODEL`        | vars   | モデル名 (推奨: `@cf/openai/whisper-large-v3-turbo`)                           |
+| `GEMINI_API_KEY`       | secret | Gemini API key                                                                 |
+| `GEMINI_MODEL`         | vars   | Gemini model name (default: `gemini-2.0-flash-lite`)                           |
 
 Workers secrets は `wrangler secret put` で設定。ローカル開発は `packages/api/.dev.vars` を使用。
 

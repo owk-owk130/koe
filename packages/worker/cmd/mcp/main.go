@@ -17,14 +17,22 @@ import (
 )
 
 func main() {
-	whisperURL := envOrDefault("WHISPER_BASE_URL", "https://api.openai.com")
+	whisperURL := os.Getenv("WHISPER_BASE_URL")
 	whisperKey := os.Getenv("WHISPER_API_KEY")
-	whisperModel := envOrDefault("WHISPER_MODEL", "whisper-1")
+	whisperModel := os.Getenv("WHISPER_MODEL")
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 	geminiModel := envOrDefault("GEMINI_MODEL", "gemini-2.0-flash-lite")
 
+	if whisperURL == "" {
+		fmt.Fprintln(os.Stderr, "error: WHISPER_BASE_URL is required")
+		os.Exit(1)
+	}
 	if whisperKey == "" {
 		fmt.Fprintln(os.Stderr, "error: WHISPER_API_KEY is required")
+		os.Exit(1)
+	}
+	if whisperModel == "" {
+		fmt.Fprintln(os.Stderr, "error: WHISPER_MODEL is required")
 		os.Exit(1)
 	}
 

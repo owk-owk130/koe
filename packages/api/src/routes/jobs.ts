@@ -22,7 +22,8 @@ jobs.post("/", async (c) => {
     throw new AppError(400, "BAD_REQUEST", "audio file is required");
   }
 
-  const user = c.get("user")!;
+  const user = c.get("user");
+  if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
   const jobId = crypto.randomUUID();
   const ext = file.name.split(".").pop() ?? "mp3";
   const audioKey = `${user.id}/audio/${jobId}/original.${ext}`;
@@ -62,7 +63,8 @@ jobs.post("/", async (c) => {
 });
 
 jobs.get("/", async (c) => {
-  const user = c.get("user")!;
+  const user = c.get("user");
+  if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
   const rawLimit = parseInt(c.req.query("limit") ?? "20", 10);
   const rawOffset = parseInt(c.req.query("offset") ?? "0", 10);
   const limit = Math.min(Number.isNaN(rawLimit) || rawLimit < 1 ? 20 : rawLimit, 100);
@@ -82,7 +84,8 @@ jobs.get("/", async (c) => {
 });
 
 jobs.get("/:id", async (c) => {
-  const user = c.get("user")!;
+  const user = c.get("user");
+  if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
   const job = await findJobById(c.env.DB, c.req.param("id"));
 
   if (!job || job.userId !== user.id) {
@@ -103,7 +106,8 @@ jobs.get("/:id", async (c) => {
 });
 
 jobs.get("/:id/topics", async (c) => {
-  const user = c.get("user")!;
+  const user = c.get("user");
+  if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
   const job = await findJobById(c.env.DB, c.req.param("id"));
 
   if (!job || job.userId !== user.id) {
