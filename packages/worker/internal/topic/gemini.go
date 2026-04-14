@@ -24,7 +24,12 @@ type GeminiAnalyzer struct {
 // Gemini API request/response types.
 
 type geminiRequest struct {
-	Contents []geminiContent `json:"contents"`
+	Contents         []geminiContent  `json:"contents"`
+	GenerationConfig generationConfig `json:"generationConfig"`
+}
+
+type generationConfig struct {
+	ResponseMimeType string `json:"responseMimeType"`
 }
 
 type geminiContent struct {
@@ -69,8 +74,6 @@ func buildPrompt(transcript string, segments []whisper.Segment) string {
 - end_sec: 終了時刻(秒)
 - transcript: そのトピックに該当する文字起こしテキスト
 
-レスポンスはJSON配列のみを返してください。マークダウンのコードブロックや説明文は不要です。
-
 ## タイムスタンプ付きセグメント
 %s
 
@@ -86,6 +89,9 @@ func (g *GeminiAnalyzer) Analyze(ctx context.Context, transcript string, segment
 		Contents: []geminiContent{{
 			Parts: []geminiPart{{Text: prompt}},
 		}},
+		GenerationConfig: generationConfig{
+			ResponseMimeType: "application/json",
+		},
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)

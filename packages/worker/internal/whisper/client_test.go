@@ -115,3 +115,85 @@ func TestClient_Transcribe_FileNotFound(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+func TestClient_Transcribe_WorkersAI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/run/@cf/openai/whisper-large-v3-turbo" {
+			t.Errorf("expected /run/@cf/openai/whisper-large-v3-turbo, got %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("expected Authorization 'Bearer test-key', got %q", got)
+		}
+		if got := r.Header.Get("cf-aig-authorization"); got != "Bearer test-key" {
+			t.Errorf("expected cf-aig-authorization 'Bearer test-key', got %q", got)
+		}
+		if ct := r.Header.Get("Content-Type"); ct != "audio/mpeg" {
+			t.Errorf("expected Content-Type 'audio/mpeg', got %q", ct)
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != "fake audio data" {
+			t.Errorf("unexpected body: %q", string(body))
+		}
+
+		resp := workersAIResponse{
+			Success: true,
+			Result: workersAIResult{
+				Text: "hello world",
+				Segments: []segmentResponse{
+					{Text: "hello ", Start: 0.0, End: 1.5},
+					{Text: "world", Start: 1.5, End: 3.0},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	audioFile := filepath.Join(tmpDir, "test.mp3")
+	os.WriteFile(audioFile, []byte("fake audio data"), 0o644)
+
+	client := &Client{
+		BaseURL: srv.URL,
+		APIKey:  "test-key",
+		Model:   "@cf/openai/whisper-large-v3-turbo",
+	}
+
+	result, err := client.Transcribe(context.Background(), audioFile)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.Text != "hello world" {
+		t.Errorf("expected text 'hello world', got %q", result.Text)
+	}
+	if len(result.Segments) != 2 {
+		t.Fatalf("expected 2 segments, got %d", len(result.Segments))
+	}
+}
+
+func TestClient_Transcribe_WorkersAI_Error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := workersAIResponse{
+			Success: false,
+			Errors:  []workersAIError{{Code: 8001, Message: "Invalid input"}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	audioFile := filepath.Join(tmpDir, "test.mp3")
+	os.WriteFile(audioFile, []byte("fake"), 0o644)
+
+	client := &Client{BaseURL: srv.URL, APIKey: "key", Model: "@cf/openai/whisper-large-v3-turbo"}
+	_, err := client.Transcribe(context.Background(), audioFile)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
