@@ -1,6 +1,6 @@
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { AuthScreen } from "./components/AuthScreen";
-import { AudioPoC } from "./AudioPoC";
+import { Dashboard } from "./components/Dashboard";
 
 function AppContent() {
   const { loading, isAuthenticated } = useAuth();
@@ -17,8 +17,7 @@ function AppContent() {
     return <AuthScreen />;
   }
 
-  // TODO: Replace AudioPoC with actual app views in later steps
-  return <AudioPoC />;
+  return <Dashboard />;
 }
 
 export function App() {
