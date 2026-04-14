@@ -14,6 +14,7 @@ import { is } from "@electron-toolkit/utils";
 import Store from "electron-store";
 import { isTokenExpired, parseUser } from "@koe/shared";
 import { IPC } from "../shared/ipc-channels";
+import { createTray, updateTrayState } from "./tray";
 
 const store = new Store<{ token?: string }>({ encryptionKey: "koe-desktop" });
 
@@ -94,8 +95,7 @@ ipcMain.handle(IPC.AUDIO_REQUEST_MIC_PERMISSION, () => {
 // ---- Recording IPC ----
 
 ipcMain.handle(IPC.RECORDING_STATE_CHANGED, (_, state: string) => {
-  // Update tray icon/menu based on state (implemented in Step 7)
-  void state;
+  updateTrayState(state as import("../shared/ipc-channels").RecordingState, mainWindow);
 });
 
 ipcMain.handle(IPC.RECORDING_SAVE, async (_, buffer: ArrayBuffer, filename: string) => {
@@ -163,7 +163,10 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(createWindow);
+  app.whenReady().then(() => {
+    createWindow();
+    createTray(mainWindow);
+  });
 
   app.on("activate", () => {
     // macOS: re-show window when dock icon clicked
