@@ -3,6 +3,9 @@ dist/
 .wrangler/
 .dev.vars
 
+# Astro
+.astro/
+
 # Go
 /packages/worker/bin/
 /packages/worker/tmp/
