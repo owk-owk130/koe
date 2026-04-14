@@ -107,13 +107,13 @@ pnpm deploy:api
 
 ### Go Worker (CLI / MCP)
 
-| Variable           | Required | Description                                                                      |
-| ------------------ | -------- | -------------------------------------------------------------------------------- |
-| `WHISPER_BASE_URL` | Yes      | Cloudflare Workers AI: `https://api.cloudflare.com/client/v4/accounts/{id}/ai`   |
-| `WHISPER_API_KEY`  | Yes      | Cloudflare API token (Workers AI 権限)                                           |
-| `WHISPER_MODEL`    | Yes      | モデル名 (推奨: `@cf/openai/whisper-large-v3-turbo`)                             |
-| `GEMINI_API_KEY`   | CLI: Yes / MCP: No | Gemini API key (トピック分割、MCP では任意)                             |
-| `GEMINI_MODEL`     | No       | Gemini model name (default: `gemini-2.0-flash-lite`)                             |
+| Variable           | Required           | Description                                                                    |
+| ------------------ | ------------------ | ------------------------------------------------------------------------------ |
+| `WHISPER_BASE_URL` | Yes                | Cloudflare Workers AI: `https://api.cloudflare.com/client/v4/accounts/{id}/ai` |
+| `WHISPER_API_KEY`  | Yes                | Cloudflare API token (Workers AI 権限)                                         |
+| `WHISPER_MODEL`    | Yes                | モデル名 (推奨: `@cf/openai/whisper-large-v3-turbo`)                           |
+| `GEMINI_API_KEY`   | CLI: Yes / MCP: No | Gemini API key (トピック分割、MCP では任意)                                    |
+| `GEMINI_MODEL`     | No                 | Gemini model name (default: `gemini-2.0-flash-lite`)                           |
 
 ### Workers API
 

@@ -3,15 +3,19 @@
   "private": true,
   "scripts": {
     "dev:api": "pnpm --filter @koe/api dev",
+    "dev:web": "pnpm --filter @koe/web dev",
     "deploy:api": "pnpm --filter @koe/api deploy",
+    "deploy:web": "pnpm --filter @koe/web deploy",
     "lint": "oxlint",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "typecheck": "pnpm --filter @koe/api typecheck",
-    "test": "pnpm test:api && pnpm test:worker",
+    "typecheck": "pnpm --filter @koe/api typecheck && pnpm --filter @koe/web typecheck",
+    "build:web": "pnpm --filter @koe/web build",
+    "test": "pnpm test:api && pnpm test:worker && pnpm test:web",
     "test:api": "pnpm --filter @koe/api test",
-    "test:worker": "cd packages/worker && mise x -- go test ./..."
+    "test:worker": "cd packages/worker && mise x -- go test ./...",
+    "test:web": "pnpm --filter @koe/web test"
   },
   "devDependencies": {
     "oxfmt": "^0.44.0",
