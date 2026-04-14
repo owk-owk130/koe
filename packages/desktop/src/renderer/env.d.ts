@@ -1,9 +1,7 @@
-interface ElectronAPI {
-  getDesktopSources: () => Promise<{ id: string; name: string; display_id: string }[]>;
-  checkPermissions: () => Promise<{ microphone: boolean; screen: boolean }>;
-  requestMicPermission: () => Promise<boolean>;
-}
+import type { ElectronAPI } from "../shared/ipc-channels";
 
-interface Window {
-  electronAPI: ElectronAPI;
+declare global {
+  interface Window {
+    electronAPI: ElectronAPI;
+  }
 }
