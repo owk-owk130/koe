@@ -17,7 +17,15 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
 
-		// Verify request body has contents
+		// Verify API key is in header, not in URL query
+		if apiKey := r.Header.Get("x-goog-api-key"); apiKey != "test-key" {
+			t.Errorf("expected x-goog-api-key 'test-key', got %q", apiKey)
+		}
+		if r.URL.RawQuery != "" {
+			t.Errorf("expected no query params (API key should be in header), got %q", r.URL.RawQuery)
+		}
+
+		// Verify request body has contents and generationConfig
 		body, _ := io.ReadAll(r.Body)
 		var req geminiRequest
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -25,6 +33,9 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 		}
 		if len(req.Contents) == 0 {
 			t.Fatal("expected non-empty contents")
+		}
+		if req.GenerationConfig.ResponseMimeType != "application/json" {
+			t.Errorf("expected responseMimeType 'application/json', got %q", req.GenerationConfig.ResponseMimeType)
 		}
 
 		// Respond with Gemini format containing JSON topics
