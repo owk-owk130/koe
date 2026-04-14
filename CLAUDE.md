@@ -41,7 +41,7 @@ packages/
 | DB           | Cloudflare D1                                                                    |
 | Storage      | Cloudflare R2                                                                    |
 | 認証         | Google OAuth (Device Flow) → JWT                                                 |
-| フロント     | Electron + React (デスクトップアプリ)                                             |
+| フロント     | Electron + React (デスクトップアプリ)                                            |
 
 ### API 設計
 
