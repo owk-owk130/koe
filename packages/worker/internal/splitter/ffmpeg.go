@@ -148,6 +148,12 @@ func (s *FFmpegSplitter) Split(ctx context.Context, audioPath string) ([]Chunk, 
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
+	cleanupTmpDir := true
+	defer func() {
+		if cleanupTmpDir {
+			os.RemoveAll(tmpDir)
+		}
+	}()
 
 	// 6. Split at each point
 	boundaries := make([]float64, 0, len(points)+2)
@@ -176,6 +182,7 @@ func (s *FFmpegSplitter) Split(ctx context.Context, audioPath string) ([]Chunk, 
 		})
 	}
 
+	cleanupTmpDir = false // caller owns the chunks now
 	return chunks, nil
 }
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/pipeline"
 	"github.com/owk-owk130/koe/packages/worker/internal/server"
@@ -56,7 +57,9 @@ func main() {
 	go func() {
 		<-ctx.Done()
 		log.Println("Shutting down...")
-		srv.Close()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
 	}()
 
 	fmt.Fprintf(os.Stderr, "koe server listening on :%s\n", port)
