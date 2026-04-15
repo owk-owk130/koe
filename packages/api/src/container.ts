@@ -17,10 +17,12 @@ export type ProcessResult = {
     text: string;
     segments: { text: string; start_sec: number; end_sec: number }[];
   };
+  summary: string;
   topics: {
     index: number;
     title: string;
     summary: string;
+    detail: string;
     start_sec: number;
     end_sec: number;
     transcript: string;
@@ -149,6 +151,7 @@ export class KoeProcessor extends DurableObject<Bindings> {
           topicIndex: t.index,
           title: t.title,
           summary: t.summary,
+          detail: t.detail,
           startSec: t.start_sec,
           endSec: t.end_sec,
           transcript: t.transcript,
@@ -158,9 +161,9 @@ export class KoeProcessor extends DurableObject<Bindings> {
 
     // Update job status to completed
     await this.env.DB.prepare(
-      "UPDATE jobs SET status = 'completed', total_chunks = ?, completed_chunks = ?, updated_at = datetime('now') WHERE id = ?",
+      "UPDATE jobs SET status = 'completed', summary = ?, total_chunks = ?, completed_chunks = ?, updated_at = datetime('now') WHERE id = ?",
     )
-      .bind(result.chunks.length, result.chunks.length, job.jobId)
+      .bind(result.summary, result.chunks.length, result.chunks.length, job.jobId)
       .run();
   }
 

@@ -24,6 +24,9 @@ export function TopicViewer({ topics }: { topics: ReturnType<typeof useJobDetail
           {topic.summary && (
             <p className="mt-1 text-xs leading-relaxed text-text-secondary">{topic.summary}</p>
           )}
+          {topic.detail && (
+            <p className="mt-2 text-xs leading-relaxed text-text-primary">{topic.detail}</p>
+          )}
           <details className="mt-2">
             <summary className="cursor-pointer text-[11px] text-text-secondary hover:text-text-primary">
               トランスクリプト

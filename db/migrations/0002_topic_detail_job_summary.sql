@@ -1,0 +1,2 @@
+ALTER TABLE topics ADD COLUMN detail TEXT;
+ALTER TABLE jobs ADD COLUMN summary TEXT;
