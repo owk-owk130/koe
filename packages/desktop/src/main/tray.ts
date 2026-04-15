@@ -1,6 +1,6 @@
 import { Menu, Tray, nativeImage, type BrowserWindow } from "electron";
-import type { RecordingState } from "../shared/ipc-channels";
-import { IPC } from "../shared/ipc-channels";
+import type { RecordingState } from "~/shared/ipc-channels";
+import { IPC } from "~/shared/ipc-channels";
 
 let tray: Tray | null = null;
 let currentState: RecordingState = "idle";

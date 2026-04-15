@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { Env } from "../types";
-import { AppError } from "../lib/errors";
-import { requireAuth } from "../middleware/auth";
+import type { Env } from "~/types";
+import { AppError } from "~/lib/errors";
+import { requireAuth } from "~/middleware/auth";
 
 const uploads = new Hono<Env>()
   .use("/*", requireAuth())

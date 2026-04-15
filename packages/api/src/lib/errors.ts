@@ -1,6 +1,6 @@
 import type { ErrorHandler } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import type { Env } from "../types";
+import type { Env } from "~/types";
 
 export class AppError extends Error {
   constructor(

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Mic, Square, RotateCcw } from "lucide-react";
 import { formatDuration } from "@koe/shared";
-import { useRecording, type AudioSourceMode } from "../hooks/useRecording";
+import { useRecording, type AudioSourceMode } from "~/renderer/hooks/useRecording";
 
 interface RecordingPanelProps {
   onRecordingComplete: (blob: Blob) => void;

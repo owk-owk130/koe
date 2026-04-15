@@ -1,6 +1,6 @@
 import { AudioWaveform, List, LogOut, Mic, Plus } from "lucide-react";
 import { statusLabel } from "@koe/shared";
-import type { useJobs } from "../hooks/useJobs";
+import type { useJobs } from "~/renderer/hooks/useJobs";
 
 type View = "transcribe" | "jobs";
 
@@ -114,10 +114,7 @@ export function Sidebar({
           {userEmail && (
             <span className="flex-1 truncate text-[11px] text-text-secondary">{userEmail}</span>
           )}
-          <button
-            onClick={onLogout}
-            className="text-text-secondary hover:text-text-primary"
-          >
+          <button onClick={onLogout} className="text-text-secondary hover:text-text-primary">
             <LogOut size={14} />
           </button>
         </div>

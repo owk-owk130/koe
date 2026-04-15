@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
-import { setupD1 } from "../test-helpers";
+import { setupD1 } from "~/test-helpers";
 import {
   createJob,
   createTopics,

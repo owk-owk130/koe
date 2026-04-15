@@ -1,15 +1,15 @@
 import { Hono } from "hono";
-import type { Env } from "../types";
-import { AppError } from "../lib/errors";
-import { requireAuth } from "../middleware/auth";
+import type { Env } from "~/types";
+import { AppError } from "~/lib/errors";
+import { requireAuth } from "~/middleware/auth";
 import {
   createJob,
   findJobById,
   findTopicsByJob,
   listJobsByUser,
-} from "../repositories/job-repository";
-import { uploadAudio } from "../services/r2-storage";
-import { enqueueJob } from "../services/container-service";
+} from "~/repositories/job-repository";
+import { uploadAudio } from "~/services/r2-storage";
+import { enqueueJob } from "~/services/container-service";
 
 const jobs = new Hono<Env>()
   .use("/*", requireAuth())
