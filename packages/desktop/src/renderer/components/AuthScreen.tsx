@@ -4,6 +4,7 @@ import { createApiClient, type DeviceCodeResponse } from "@koe/shared";
 import { useAuth } from "../hooks/useAuth";
 
 const API_URL = "http://localhost:8787";
+const api = createApiClient(API_URL);
 
 type FlowState = "idle" | "polling" | "success" | "error";
 
@@ -14,8 +15,6 @@ export function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const api = createApiClient(API_URL);
 
   const startFlow = useCallback(async () => {
     setError(null);
@@ -46,7 +45,7 @@ export function AuthScreen() {
       setFlowState("error");
       setError(e instanceof Error ? e.message : "Failed to start authentication");
     }
-  }, [api, login]);
+  }, [login]);
 
   useEffect(() => {
     return () => {
@@ -69,7 +68,7 @@ export function AuthScreen() {
   }, [deviceCode]);
 
   return (
-    <div className="flex flex-1 items-center justify-center p-8">
+    <div className="flex min-h-screen items-center justify-center bg-surface p-8">
       <div className="w-full max-w-[360px] rounded-card bg-white p-8 shadow-card">
         <div className="flex flex-col items-center gap-5">
           <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-light">

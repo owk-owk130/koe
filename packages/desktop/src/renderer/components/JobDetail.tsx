@@ -7,7 +7,7 @@ import { TopicViewer } from "./TopicViewer";
 
 interface JobDetailProps {
   jobId: string;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 export function JobDetail({ jobId, onBack }: JobDetailProps) {
@@ -30,14 +30,16 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
   }
 
   return (
-    <div className="space-y-4 p-5">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
-      >
-        <ArrowLeft size={14} />
-        ジョブ一覧に戻る
-      </button>
+    <div className="flex-1 space-y-4">
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
+        >
+          <ArrowLeft size={14} />
+          ジョブ一覧に戻る
+        </button>
+      )}
 
       <div className="flex items-center gap-3">
         <h2 className="text-lg font-semibold text-text-primary">

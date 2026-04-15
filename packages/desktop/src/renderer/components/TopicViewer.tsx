@@ -9,7 +9,7 @@ export function TopicViewer({ topics }: { topics: Topic[] }) {
   return (
     <div className="space-y-3">
       {topics.map((topic) => (
-        <div key={topic.id} className="rounded-card bg-white p-3.5 shadow-card">
+        <div key={topic.id} className="rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
           <div className="flex items-start justify-between">
             <h3 className="text-[13px] font-semibold text-text-primary">{topic.title}</h3>
             {topic.start_sec != null && topic.end_sec != null && (

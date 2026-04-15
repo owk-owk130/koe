@@ -1,67 +1,85 @@
-import { useState } from "react";
-import { Mic } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Plus, Upload } from "lucide-react";
+import { createApiClient } from "@koe/shared";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
+import { useJobs } from "./hooks/useJobs";
 import { AuthScreen } from "./components/AuthScreen";
-import { Dashboard } from "./components/Dashboard";
+import { Sidebar } from "./components/Sidebar";
 import { QuickTranscribe } from "./components/QuickTranscribe";
+import { JobDetail } from "./components/JobDetail";
+import { RecordingPanel } from "./components/RecordingPanel";
 
-type View = "dashboard" | "transcribe";
+const API_URL = "http://localhost:8787";
+const api = createApiClient(API_URL);
 
-function NavBar({
-  view,
-  setView,
-  isAuthenticated,
-  userInitial,
-}: {
-  view: View;
-  setView: (v: View) => void;
-  isAuthenticated: boolean;
-  userInitial: string | null;
-}) {
+type View = "transcribe" | "jobs";
+
+function JobsEmptyState() {
   return (
-    <header className="flex h-11 items-center justify-between border-b border-b-[rgba(0,0,0,0.02)] bg-white px-4">
-      <div className="flex items-center gap-2">
-        <Mic size={18} className="text-brand" />
-        <span className="text-base font-semibold text-text-primary">koe</span>
+    <div className="flex flex-1 flex-col items-center justify-center gap-3">
+      <div className="text-text-secondary/40">
+        <svg width={40} height={40} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+          <path d="M22 12H16L14 15H10L8 12H2" />
+          <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+        </svg>
       </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setView("transcribe")}
-          className={`rounded-button px-2.5 py-1 text-xs font-medium ${
-            view === "transcribe"
-              ? "bg-text-primary text-white"
-              : "text-text-secondary hover:bg-surface"
-          }`}
-        >
-          クイック文字起こし
-        </button>
-        {isAuthenticated && (
-          <>
-            <button
-              onClick={() => setView("dashboard")}
-              className={`rounded-button px-2.5 py-1 text-xs font-medium ${
-                view === "dashboard"
-                  ? "bg-text-primary text-white"
-                  : "text-text-secondary hover:bg-surface"
-              }`}
-            >
-              ダッシュボード
-            </button>
-            {userInitial && (
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-surface text-xs font-semibold text-text-primary">
-                {userInitial}
-              </div>
-            )}
-          </>
-        )}
-      </div>
-    </header>
+      <p className="text-[15px] font-semibold text-text-primary">まだジョブがありません</p>
+      <p className="text-center text-[13px] leading-relaxed text-text-secondary">
+        音声ファイルをアップロードするか、
+        <br />
+        録音して文字起こしを開始しましょう
+      </p>
+    </div>
   );
 }
 
 function AppContent() {
-  const { loading, isAuthenticated, user } = useAuth();
-  const [view, setView] = useState<View>("dashboard");
+  const { loading, isAuthenticated, user, token, logout } = useAuth();
+  const { jobs, refresh } = useJobs();
+  const [view, setView] = useState<View>("transcribe");
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [showRecording, setShowRecording] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const handleRecordingComplete = useCallback(
+    async (blob: Blob) => {
+      if (!token) return;
+      setUploading(true);
+      try {
+        const file = new File([blob], `recording-${Date.now()}.webm`, { type: "audio/webm" });
+        const result = await api.createJob(token, file);
+        setSelectedJobId(result.id);
+        setShowRecording(false);
+        setView("jobs");
+        refresh();
+      } catch (e) {
+        console.error("Upload failed:", e);
+      } finally {
+        setUploading(false);
+      }
+    },
+    [token, refresh],
+  );
+
+  const handleFileImport = useCallback(async () => {
+    if (!token) return;
+    const fileInfo = await window.electronAPI.selectAudioFile();
+    if (!fileInfo) return;
+
+    setUploading(true);
+    try {
+      const buffer = await window.electronAPI.readFile(fileInfo.path);
+      const file = new File([buffer], fileInfo.name, { type: "audio/mpeg" });
+      const result = await api.createJob(token, file);
+      setSelectedJobId(result.id);
+      setView("jobs");
+      refresh();
+    } catch (e) {
+      console.error("File import failed:", e);
+    } finally {
+      setUploading(false);
+    }
+  }, [token, refresh]);
 
   if (loading) {
     return (
@@ -71,27 +89,93 @@ function AppContent() {
     );
   }
 
-  if (!isAuthenticated && view === "dashboard") {
-    return (
-      <div className="flex min-h-screen flex-col bg-white">
-        <NavBar view={view} setView={setView} isAuthenticated={false} userInitial={null} />
-        <AuthScreen />
-      </div>
-    );
+  if (!isAuthenticated) {
+    return <AuthScreen />;
   }
 
   const userInitial = user?.name?.charAt(0) ?? user?.email?.charAt(0)?.toUpperCase() ?? null;
+  const userEmail = user?.email ?? null;
+
+  const renderJobsContent = () => {
+    if (selectedJobId) {
+      return <JobDetail jobId={selectedJobId} />;
+    }
+
+    return (
+      <>
+        {showRecording && (
+          <div className="rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
+            <RecordingPanel onRecordingComplete={handleRecordingComplete} />
+            {uploading && (
+              <p className="mt-2 text-[11px] text-text-secondary">アップロード中...</p>
+            )}
+          </div>
+        )}
+
+        {jobs.length === 0 ? (
+          <JobsEmptyState />
+        ) : (
+          <p className="text-xs text-text-secondary">
+            サイドバーからジョブを選択してください
+          </p>
+        )}
+      </>
+    );
+  };
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
-      <NavBar
+    <div className="flex min-h-screen bg-surface">
+      <Sidebar
         view={view}
         setView={setView}
-        isAuthenticated={isAuthenticated}
+        jobs={jobs}
+        selectedJobId={selectedJobId}
+        onSelectJob={setSelectedJobId}
+        onLogout={logout}
+        onNewJob={() => {
+          setShowRecording(true);
+          setSelectedJobId(null);
+          setView("jobs");
+        }}
         userInitial={userInitial}
+        userEmail={userEmail}
       />
-      <main className="flex-1 overflow-auto">
-        {view === "transcribe" ? <QuickTranscribe /> : <Dashboard />}
+
+      <main className="flex flex-1 flex-col overflow-auto">
+        {view === "transcribe" ? (
+          <QuickTranscribe />
+        ) : (
+          <div className="flex flex-1 flex-col gap-5 p-6">
+            {/* Toolbar */}
+            <div className="flex items-center justify-between">
+              <h1 className="text-xl font-semibold text-text-primary">
+                {selectedJobId ? "" : "ジョブ一覧"}
+              </h1>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    setShowRecording(!showRecording);
+                    setSelectedJobId(null);
+                  }}
+                  className="flex items-center gap-1.5 rounded-button bg-text-primary px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+                >
+                  <Plus size={12} />
+                  新規ジョブ
+                </button>
+                <button
+                  onClick={handleFileImport}
+                  disabled={uploading}
+                  className="flex items-center gap-1.5 rounded-button border border-border px-3 py-1.5 text-xs text-text-primary hover:bg-white disabled:opacity-50"
+                >
+                  <Upload size={12} />
+                  ファイル
+                </button>
+              </div>
+            </div>
+
+            {renderJobsContent()}
+          </div>
+        )}
       </main>
     </div>
   );
