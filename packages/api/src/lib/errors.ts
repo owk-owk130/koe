@@ -1,4 +1,5 @@
 import type { ErrorHandler } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Env } from "../types";
 
 export class AppError extends Error {
@@ -14,7 +15,10 @@ export class AppError extends Error {
 
 export const onError: ErrorHandler<Env> = (err, c) => {
   if (err instanceof AppError) {
-    return c.json({ error: { code: err.code, message: err.message } }, { status: err.status });
+    return c.json(
+      { error: { code: err.code, message: err.message } },
+      err.status as ContentfulStatusCode,
+    );
   }
 
   console.error("Unhandled error:", err);

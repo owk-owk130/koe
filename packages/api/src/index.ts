@@ -9,16 +9,15 @@ import type { Env } from "./types";
 
 export { KoeProcessor } from "./container";
 
-const app = new Hono<Env>();
+const app = new Hono<Env>()
+  .use("/*", cors())
+  .get("/health", (c) => c.json({ status: "ok" }))
+  .route("/auth", authRoutes)
+  .route("/api/v1/jobs", jobsRoutes)
+  .route("/api/v1/transcribe", transcribeRoutes)
+  .route("/api/v1/uploads", uploadsRoutes);
 
-app.use("/*", cors());
 app.onError(onError);
 
-app.get("/health", (c) => c.json({ status: "ok" }));
-
-app.route("/auth", authRoutes);
-app.route("/api/v1/jobs", jobsRoutes);
-app.route("/api/v1/transcribe", transcribeRoutes);
-app.route("/api/v1/uploads", uploadsRoutes);
-
+export type AppType = typeof app;
 export default app;
