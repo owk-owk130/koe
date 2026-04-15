@@ -1,17 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ApiError,
-  createApiClient,
-  type DeviceCodeResponse,
-  type TokenResponse,
-  type JobListResponse,
-  type JobDetailResponse,
-  type TopicsResponse,
-  type CreateJobResponse,
-  type TranscribeResponse,
-  type InitiateUploadResponse,
-  type UploadPartResponse,
-} from "./api-client";
+import { ApiError, createApiClient } from "./api-client";
 
 function mockFetch(status: number, body: unknown) {
   return vi.fn().mockResolvedValue(
@@ -40,7 +28,7 @@ describe("api-client", () => {
 
   describe("getDeviceCode", () => {
     it("returns device code from GET /auth/device", async () => {
-      const body: DeviceCodeResponse = {
+      const body = {
         device_code: "dc-123",
         user_code: "ABCD-1234",
         verification_url: "https://example.com/activate",
@@ -59,7 +47,7 @@ describe("api-client", () => {
 
   describe("pollToken", () => {
     it("returns token response on 200", async () => {
-      const body: TokenResponse = {
+      const body = {
         token: "jwt-token",
         user: { id: "u1", email: "test@example.com", name: "Test" },
       };
@@ -88,7 +76,7 @@ describe("api-client", () => {
 
   describe("listJobs", () => {
     it("returns jobs from GET /api/v1/jobs with query params", async () => {
-      const body: JobListResponse = {
+      const body = {
         jobs: [
           {
             id: "j1",
@@ -113,7 +101,7 @@ describe("api-client", () => {
 
   describe("getJob", () => {
     it("returns job detail from GET /api/v1/jobs/:id", async () => {
-      const body: JobDetailResponse = {
+      const body = {
         id: "j1",
         status: "completed",
         audio_key: "key",
@@ -136,7 +124,7 @@ describe("api-client", () => {
 
   describe("getTopics", () => {
     it("returns topics from GET /api/v1/jobs/:id/topics", async () => {
-      const body: TopicsResponse = {
+      const body = {
         topics: [
           {
             id: "t1",
@@ -161,7 +149,7 @@ describe("api-client", () => {
 
   describe("createJob", () => {
     it("uploads FormData to POST /api/v1/jobs", async () => {
-      const body: CreateJobResponse = {
+      const body = {
         id: "j-new",
         status: "pending",
         audio_key: "key",
@@ -181,7 +169,7 @@ describe("api-client", () => {
 
   describe("transcribe", () => {
     it("uploads FormData to POST /api/v1/transcribe", async () => {
-      const body: TranscribeResponse = {
+      const body = {
         transcript: { text: "hello", segments: [{ text: "hello", start_sec: 0, end_sec: 1 }] },
         topics: [
           {
@@ -204,7 +192,7 @@ describe("api-client", () => {
 
   describe("upload endpoints", () => {
     it("initiateUpload calls POST /api/v1/uploads", async () => {
-      const body: InitiateUploadResponse = {
+      const body = {
         upload_id: "up-1",
         key: "user/audio/j1/original.mp3",
         job_id: "j1" as `${string}-${string}-${string}-${string}-${string}`,
@@ -216,7 +204,7 @@ describe("api-client", () => {
     });
 
     it("uploadPart calls PUT /api/v1/uploads/:id/parts/:num", async () => {
-      const body: UploadPartResponse = { part_number: 1, etag: "etag-1" };
+      const body = { part_number: 1, etag: "etag-1" };
       vi.stubGlobal("fetch", mockFetch(200, body));
 
       const chunk = new Blob(["data"]);

@@ -22,31 +22,16 @@ async function throwIfError(res: { ok: boolean; status: number; json(): Promise<
   }
 }
 
-// --- 型 export（hc プロキシから typeof で導出） ---
+// --- 外部から名前で import される型のみ export ---
 
 const $api = hc<AppType>("");
 
 export type DeviceCodeResponse = InferResponseType<typeof $api.auth.device.$get>;
-export type TokenResponse = InferResponseType<typeof $api.auth.token.$post, 200>;
-export type JobListResponse = InferResponseType<typeof $api.api.v1.jobs.$get>;
-export type Job = JobListResponse["jobs"][number];
-export type JobDetailResponse = InferResponseType<typeof $api.api.v1.jobs[":id"]["$get"]>;
-export type TopicsResponse = InferResponseType<
+export type Job = InferResponseType<typeof $api.api.v1.jobs.$get>["jobs"][number];
+export type Topic = InferResponseType<
   typeof $api.api.v1.jobs[":id"]["topics"]["$get"]
->;
-export type Topic = TopicsResponse["topics"][number];
-export type CreateJobResponse = InferResponseType<typeof $api.api.v1.jobs.$post, 201>;
+>["topics"][number];
 export type TranscribeResponse = InferResponseType<typeof $api.api.v1.transcribe.$post>;
-export type InitiateUploadResponse = InferResponseType<typeof $api.api.v1.uploads.$post>;
-export type UploadPartResponse = InferResponseType<
-  typeof $api.api.v1.uploads[":uploadId"]["parts"][":partNumber"]["$put"]
->;
-export type CompleteUploadResponse = InferResponseType<
-  typeof $api.api.v1.uploads[":uploadId"]["complete"]["$post"]
->;
-export type AbortUploadResponse = InferResponseType<
-  typeof $api.api.v1.uploads[":uploadId"]["$delete"]
->;
 
 // --- API クライアント ---
 
@@ -62,25 +47,23 @@ export function createApiClient(baseUrl: string) {
   }
 
   return {
-    async getDeviceCode(): Promise<DeviceCodeResponse> {
+    // hc ベース — 返り値型は res.json() から自動推論
+    async getDeviceCode() {
       const res = await client().auth.device.$get();
       await throwIfError(res);
       return res.json();
     },
 
-    async pollToken(deviceCode: string): Promise<TokenResponse | null> {
+    async pollToken(deviceCode: string) {
       const res = await client().auth.token.$post({
         json: { device_code: deviceCode },
       });
       if (res.status === 428) return null;
       await throwIfError(res);
-      return res.json() as Promise<TokenResponse>;
+      return res.json();
     },
 
-    async listJobs(
-      token: string,
-      params?: { limit?: number; offset?: number },
-    ): Promise<JobListResponse> {
+    async listJobs(token: string, params?: { limit?: number; offset?: number }) {
       const res = await client(token).api.v1.jobs.$get({
         query: {
           limit: params?.limit?.toString(),
@@ -91,7 +74,7 @@ export function createApiClient(baseUrl: string) {
       return res.json();
     },
 
-    async getJob(token: string, id: string): Promise<JobDetailResponse> {
+    async getJob(token: string, id: string) {
       const res = await client(token).api.v1.jobs[":id"].$get({
         param: { id },
       });
@@ -99,7 +82,7 @@ export function createApiClient(baseUrl: string) {
       return res.json();
     },
 
-    async getTopics(token: string, jobId: string): Promise<TopicsResponse> {
+    async getTopics(token: string, jobId: string) {
       const res = await client(token).api.v1.jobs[":id"].topics.$get({
         param: { id: jobId },
       });
@@ -107,8 +90,9 @@ export function createApiClient(baseUrl: string) {
       return res.json();
     },
 
-    // FormData endpoints — hc はリクエストボディ型を推論できないため手動 fetch
-    async createJob(token: string, file: File): Promise<CreateJobResponse> {
+    // FormData — hc がリクエストボディ型を推論できないため手動 fetch
+    // 返り値型は InferResponseType で付与
+    async createJob(token: string, file: File) {
       const form = new FormData();
       form.append("audio", file);
       const res = await fetch(`${baseUrl}/api/v1/jobs`, {
@@ -117,10 +101,10 @@ export function createApiClient(baseUrl: string) {
         body: form,
       });
       await throwIfError(res);
-      return res.json() as Promise<CreateJobResponse>;
+      return (await res.json()) as InferResponseType<typeof $api.api.v1.jobs.$post, 201>;
     },
 
-    async transcribe(file: File, token?: string): Promise<TranscribeResponse> {
+    async transcribe(file: File, token?: string) {
       const form = new FormData();
       form.append("audio", file);
       const headers: Record<string, string> = {};
@@ -131,27 +115,20 @@ export function createApiClient(baseUrl: string) {
         body: form,
       });
       await throwIfError(res);
-      return res.json() as Promise<TranscribeResponse>;
+      return (await res.json()) as TranscribeResponse;
     },
 
-    // Uploads — json body / query を使う routes も手動 fetch（バリデータなしで hc 型推論不可）
-    async initiateUpload(token: string, filename: string): Promise<InitiateUploadResponse> {
+    async initiateUpload(token: string, filename: string) {
       const res = await fetch(`${baseUrl}/api/v1/uploads`, {
         method: "POST",
         headers: { ...authHeaders(token), "Content-Type": "application/json" },
         body: JSON.stringify({ filename }),
       });
       await throwIfError(res);
-      return res.json() as Promise<InitiateUploadResponse>;
+      return (await res.json()) as InferResponseType<typeof $api.api.v1.uploads.$post>;
     },
 
-    async uploadPart(
-      token: string,
-      uploadId: string,
-      partNumber: number,
-      key: string,
-      body: Blob,
-    ): Promise<UploadPartResponse> {
+    async uploadPart(token: string, uploadId: string, partNumber: number, key: string, body: Blob) {
       const res = await fetch(
         `${baseUrl}/api/v1/uploads/${uploadId}/parts/${partNumber}?key=${encodeURIComponent(key)}`,
         {
@@ -161,7 +138,9 @@ export function createApiClient(baseUrl: string) {
         },
       );
       await throwIfError(res);
-      return res.json() as Promise<UploadPartResponse>;
+      return (await res.json()) as InferResponseType<
+        typeof $api.api.v1.uploads[":uploadId"]["parts"][":partNumber"]["$put"]
+      >;
     },
 
     async completeUpload(
@@ -169,21 +148,19 @@ export function createApiClient(baseUrl: string) {
       uploadId: string,
       key: string,
       parts: { part_number: number; etag: string }[],
-    ): Promise<CompleteUploadResponse> {
+    ) {
       const res = await fetch(`${baseUrl}/api/v1/uploads/${uploadId}/complete`, {
         method: "POST",
         headers: { ...authHeaders(token), "Content-Type": "application/json" },
         body: JSON.stringify({ key, parts }),
       });
       await throwIfError(res);
-      return res.json() as Promise<CompleteUploadResponse>;
+      return (await res.json()) as InferResponseType<
+        typeof $api.api.v1.uploads[":uploadId"]["complete"]["$post"]
+      >;
     },
 
-    async abortUpload(
-      token: string,
-      uploadId: string,
-      key: string,
-    ): Promise<AbortUploadResponse> {
+    async abortUpload(token: string, uploadId: string, key: string) {
       const res = await fetch(
         `${baseUrl}/api/v1/uploads/${uploadId}?key=${encodeURIComponent(key)}`,
         {
@@ -192,7 +169,7 @@ export function createApiClient(baseUrl: string) {
         },
       );
       await throwIfError(res);
-      return res.json() as Promise<AbortUploadResponse>;
+      return (await res.json()) as InferResponseType<typeof $api.api.v1.uploads[":uploadId"]["$delete"]>;
     },
   };
 }
