@@ -42,6 +42,59 @@ func TestParseSilenceDetect_Empty(t *testing.T) {
 	}
 }
 
+func TestParseFfmpegTime(t *testing.T) {
+	tests := []struct {
+		name    string
+		output  string
+		want    float64
+		wantErr bool
+	}{
+		{
+			name:   "standard stats output",
+			output: "size=       0kB time=00:01:30.50 bitrate=N/A speed=1234x\n",
+			want:   90.5,
+		},
+		{
+			name:   "multiple time entries uses last",
+			output: "size=       0kB time=00:00:10.00 bitrate=N/A\nsize=       0kB time=00:02:05.25 bitrate=N/A\n",
+			want:   125.25,
+		},
+		{
+			name:   "hours included",
+			output: "size=       0kB time=01:30:00.00 bitrate=N/A\n",
+			want:   5400,
+		},
+		{
+			name:    "no time in output",
+			output:  "some random output\n",
+			wantErr: true,
+		},
+		{
+			name:    "empty output",
+			output:  "",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseFfmpegTime(tt.output)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := got - tt.want; diff > 0.01 || diff < -0.01 {
+				t.Errorf("got %.2f, want %.2f", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestComputeSplitPoints(t *testing.T) {
 	tests := []struct {
 		name        string

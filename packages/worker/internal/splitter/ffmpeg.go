@@ -32,6 +32,7 @@ type silence struct {
 var (
 	reSilenceStart = regexp.MustCompile(`silence_start:\s*([\d.]+)`)
 	reSilenceEnd   = regexp.MustCompile(`silence_end:\s*([\d.]+)`)
+	reTime         = regexp.MustCompile(`time=(\d+):(\d+):([\d.]+)`)
 )
 
 func parseSilenceDetect(output string) []silence {
@@ -197,7 +198,41 @@ func probeDuration(ctx context.Context, audioPath string) (float64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("ffprobe: %w", err)
 	}
-	return strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+
+	s := strings.TrimSpace(string(out))
+	if d, err := strconv.ParseFloat(s, 64); err == nil {
+		return d, nil
+	}
+
+	// Fallback: decode to get duration when container metadata lacks it (e.g. some WebM files)
+	return probeDurationByDecode(ctx, audioPath)
+}
+
+func probeDurationByDecode(ctx context.Context, audioPath string) (float64, error) {
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-i", audioPath,
+		"-f", "null",
+		"-v", "quiet",
+		"-stats",
+		"-",
+	)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return 0, fmt.Errorf("ffmpeg decode for duration: %w", err)
+	}
+	return parseFfmpegTime(string(out))
+}
+
+func parseFfmpegTime(output string) (float64, error) {
+	matches := reTime.FindAllStringSubmatch(output, -1)
+	if len(matches) == 0 {
+		return 0, fmt.Errorf("could not determine audio duration")
+	}
+	last := matches[len(matches)-1]
+	h, _ := strconv.ParseFloat(last[1], 64)
+	m, _ := strconv.ParseFloat(last[2], 64)
+	s, _ := strconv.ParseFloat(last[3], 64)
+	return h*3600 + m*60 + s, nil
 }
 
 func detectSilences(ctx context.Context, audioPath string, threshold int, minDuration float64) ([]silence, error) {

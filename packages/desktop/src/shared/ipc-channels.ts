@@ -30,6 +30,7 @@ export const IPC = {
   // App
   APP_GET_VERSION: "app:get-version",
   APP_OPEN_EXTERNAL: "app:open-external",
+  APP_OPEN_SCREEN_RECORDING_SETTINGS: "app:open-screen-recording-settings",
 
   // Upload (main process handles large file upload)
   UPLOAD_MULTIPART: "upload:multipart",
@@ -91,6 +92,7 @@ export interface ElectronAPI {
   // App
   getVersion: () => Promise<string>;
   openExternal: (url: string) => Promise<void>;
+  openScreenRecordingSettings: () => Promise<void>;
 
   // Upload
   multipartUpload: (filePath: string, token: string) => Promise<UploadResult>;
