@@ -1,16 +1,15 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createApiClient } from "@koe/shared";
+import { parseResponse } from "@koe/shared";
 import { useAuth } from "./useAuth";
-
-const API_URL = "http://localhost:8787";
-const api = createApiClient(API_URL);
+import { useApiClient } from "./useApiClient";
 
 export function useJobs() {
   const { token } = useAuth();
+  const client = useApiClient();
 
   const query = useQuery({
     queryKey: ["jobs"],
-    queryFn: () => api.listJobs(token!),
+    queryFn: () => parseResponse(client.api.v1.jobs.$get()),
     enabled: !!token,
     refetchInterval: ({ state }) => {
       const jobs = state.data?.jobs;

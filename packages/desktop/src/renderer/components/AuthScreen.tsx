@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Mic } from "lucide-react";
-import { createApiClient, type DeviceCodeResponse } from "@koe/shared";
+import { createClient } from "@koe/shared";
 import { useAuth } from "../hooks/useAuth";
 
 const API_URL = "http://localhost:8787";
-const api = createApiClient(API_URL);
+const client = createClient(API_URL);
 
 type FlowState = "idle" | "polling" | "success" | "error";
+type DeviceCode = Awaited<ReturnType<typeof client.auth.device.$get>> extends { json(): Promise<infer T> } ? T : never;
 
 export function AuthScreen() {
   const { login } = useAuth();
   const [flowState, setFlowState] = useState<FlowState>("idle");
-  const [deviceCode, setDeviceCode] = useState<DeviceCodeResponse | null>(null);
+  const [deviceCode, setDeviceCode] = useState<DeviceCode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -20,15 +21,20 @@ export function AuthScreen() {
     setError(null);
     setFlowState("idle");
     try {
-      const code = await api.getDeviceCode();
+      const codeRes = await client.auth.device.$get();
+      const code = await codeRes.json();
       setDeviceCode(code);
       setFlowState("polling");
 
       timerRef.current = setInterval(
         async () => {
           try {
-            const result = await api.pollToken(code.device_code);
-            if (result) {
+            const tokenRes = await client.auth.token.$post({
+              json: { device_code: code.device_code },
+            });
+            if (tokenRes.status === 428) return;
+            const result = await tokenRes.json();
+            if ("token" in result) {
               if (timerRef.current) clearInterval(timerRef.current);
               setFlowState("success");
               await login(result.token);
