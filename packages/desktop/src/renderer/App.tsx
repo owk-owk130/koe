@@ -1,8 +1,9 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
+import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
 import { Plus, Upload } from "lucide-react";
 import { createApiClient } from "@koe/shared";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
-import { useJobs } from "./hooks/useJobs";
+import { useJobs, useInvalidateJobs } from "./hooks/useJobs";
 import { AuthScreen } from "./components/AuthScreen";
 import { Sidebar } from "./components/Sidebar";
 import { QuickTranscribe } from "./components/QuickTranscribe";
@@ -12,13 +13,26 @@ import { RecordingPanel } from "./components/RecordingPanel";
 const API_URL = "http://localhost:8787";
 const api = createApiClient(API_URL);
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { retry: 1, staleTime: 2000 },
+  },
+});
+
 type View = "transcribe" | "jobs";
 
 function JobsEmptyState() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-3">
       <div className="text-text-secondary/40">
-        <svg width={40} height={40} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}>
+        <svg
+          width={40}
+          height={40}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.5}
+        >
           <path d="M22 12H16L14 15H10L8 12H2" />
           <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
         </svg>
@@ -35,51 +49,35 @@ function JobsEmptyState() {
 
 function AppContent() {
   const { loading, isAuthenticated, user, token, logout } = useAuth();
-  const { jobs, refresh } = useJobs();
+  const { jobs } = useJobs();
+  const invalidateJobs = useInvalidateJobs();
   const [view, setView] = useState<View>("transcribe");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [showRecording, setShowRecording] = useState(false);
-  const [uploading, setUploading] = useState(false);
 
-  const handleRecordingComplete = useCallback(
-    async (blob: Blob) => {
-      if (!token) return;
-      setUploading(true);
-      try {
-        const file = new File([blob], `recording-${Date.now()}.webm`, { type: "audio/webm" });
-        const result = await api.createJob(token, file);
-        setSelectedJobId(result.id);
-        setShowRecording(false);
-        setView("jobs");
-        refresh();
-      } catch (e) {
-        console.error("Upload failed:", e);
-      } finally {
-        setUploading(false);
-      }
+  const createJobMutation = useMutation({
+    mutationFn: (file: File) => api.createJob(token!, file),
+    onSuccess: (result) => {
+      invalidateJobs();
+      setSelectedJobId(result.id);
+      setShowRecording(false);
+      setView("jobs");
     },
-    [token, refresh],
-  );
+  });
 
-  const handleFileImport = useCallback(async () => {
-    if (!token) return;
+  const handleRecordingComplete = (blob: Blob) => {
+    const file = new File([blob], `recording-${Date.now()}.webm`, { type: "audio/webm" });
+    createJobMutation.mutate(file);
+  };
+
+  const handleFileImport = async () => {
     const fileInfo = await window.electronAPI.selectAudioFile();
     if (!fileInfo) return;
 
-    setUploading(true);
-    try {
-      const buffer = await window.electronAPI.readFile(fileInfo.path);
-      const file = new File([buffer], fileInfo.name, { type: "audio/mpeg" });
-      const result = await api.createJob(token, file);
-      setSelectedJobId(result.id);
-      setView("jobs");
-      refresh();
-    } catch (e) {
-      console.error("File import failed:", e);
-    } finally {
-      setUploading(false);
-    }
-  }, [token, refresh]);
+    const buffer = await window.electronAPI.readFile(fileInfo.path);
+    const file = new File([buffer], fileInfo.name, { type: "audio/mpeg" });
+    createJobMutation.mutate(file);
+  };
 
   if (loading) {
     return (
@@ -95,6 +93,7 @@ function AppContent() {
 
   const userInitial = user?.name?.charAt(0) ?? user?.email?.charAt(0)?.toUpperCase() ?? null;
   const userEmail = user?.email ?? null;
+  const uploading = createJobMutation.isPending;
 
   const renderJobsContent = () => {
     if (selectedJobId) {
@@ -115,9 +114,7 @@ function AppContent() {
         {jobs.length === 0 ? (
           <JobsEmptyState />
         ) : (
-          <p className="text-xs text-text-secondary">
-            サイドバーからジョブを選択してください
-          </p>
+          <p className="text-xs text-text-secondary">サイドバーからジョブを選択してください</p>
         )}
       </>
     );
@@ -183,8 +180,10 @@ function AppContent() {
 
 export function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
