@@ -1,7 +1,7 @@
 # koe Design System
 
 koe デスクトップアプリの UI デザインガイドライン。
-Airbnb のビジュアルスタイルをベースに、音声文字起こしアプリ向けにカスタマイズ。
+ビジュアルは Airbnb のスタイルをベース、UI 構造は Apple Human Interface Guidelines に準拠。
 
 ## デザイントークン
 
@@ -101,31 +101,28 @@ inline-block rounded-badge px-2 py-0.5 text-[11px] font-medium
 | completed    | `bg-[#dcfce7] text-[#166534]`         |
 | failed       | `bg-[#fee2e2] text-error`             |
 
-### ナビゲーションバー
+### サイドバー
 
 ```
-flex h-11 items-center justify-between border-b border-b-[rgba(0,0,0,0.02)] bg-white px-4
+aside w-60 flex-col border-r border-r-[rgba(0,0,0,0.03)] bg-white
 ```
 
-- アクティブタブ: `bg-text-primary text-white`
-- 非アクティブタブ: `text-text-secondary hover:bg-surface`
-- ユーザーアバター: `h-7 w-7 rounded-full bg-surface` にイニシャル表示
+- ロゴ: `Mic` アイコン + "koe" テキスト
+- ナビ項目（アクティブ）: `bg-surface font-medium text-text-primary rounded-md`
+- ナビ項目（非アクティブ）: `text-text-secondary hover:bg-surface/50`
+- ジョブリスト: ファイル名 + ステータスラベルの2行表示
+- 選択中ジョブ: `bg-brand/[0.08]` + `text-brand`
+- ユーザー: アバター + メール + ログアウトボタン（border-t で区切り）
 
-### テーブル（ジョブ一覧）
+### ツールバー
+
+各コンテンツエリアの上部に配置。
 
 ```
-// コンテナ
-overflow-hidden rounded-card bg-white shadow-card
-
-// ヘッダー行
-flex h-9 items-center bg-surface px-4
-
-// データ行
-flex h-11 w-full items-center px-4 hover:bg-surface/50
-border-b border-surface（最終行以外）
+flex items-center justify-between
+├── h1 text-xl font-semibold  <!-- ページタイトル -->
+└── div flex gap-2            <!-- アクションボタン群 -->
 ```
-
-列幅: ステータス `w-24` / ファイル名 `flex-1` / 日時 `w-40`
 
 ### フォーム要素
 
@@ -144,22 +141,25 @@ animate-spin rounded-full border-2 border-brand border-t-transparent
 
 ## レイアウト
 
-### 全体構造
+### 全体構造（マスター/ディテール）
 
 ```
-<div class="flex min-h-screen flex-col bg-white">
-  <NavBar />          <!-- h-11 固定 -->
+<div class="flex min-h-screen bg-surface">
+  <Sidebar />           <!-- w-60 固定、bg-white -->
   <main class="flex-1 overflow-auto">
+    <Toolbar />          <!-- タイトル + アクション -->
     <!-- コンテンツ -->
   </main>
 </div>
 ```
 
+認証前は AuthScreen をフルスクリーン表示（サイドバーなし）。
+
 ### スペーシング
 
-- メインコンテンツ padding: `p-5`
-- セクション間: `space-y-4`
-- カード内 padding: `p-3.5` 〜 `p-4`
+- コンテンツエリア padding: `p-6`
+- セクション間: `gap-5`
+- カード内 padding: `p-4` 〜 `p-6`
 - 要素間 gap: `gap-1.5` 〜 `gap-3`
 
 ### 分割レイアウト
@@ -172,28 +172,70 @@ flex gap-5
 └── w-1/2  <!-- 結果（トランスクリプト・トピック） -->
 ```
 
+### 空状態
+
+コンテンツが存在しない場合は必ず空状態を表示する。
+
+```
+flex flex-1 flex-col items-center justify-center gap-3
+├── アイコン（32-40px、text-text-secondary/40）
+├── タイトル（text-[15px] font-semibold）
+└── 説明テキスト（text-[13px] text-text-secondary、中央揃え）
+```
+
 ## アイコン
 
 lucide-react を使用。自作 SVG は使わない。
 
 | アイコン        | 用途             |
 | --------------- | ---------------- |
-| `Mic`           | ロゴ・録音ボタン |
-| `Plus`          | 新規ジョブ       |
-| `Upload`        | ファイルインポート |
-| `LogOut`        | ログアウト       |
-| `ArrowLeft`     | 戻るナビゲーション |
-| `ExternalLink`  | 外部リンク（認証） |
-| `Square`        | 録音停止         |
-| `RotateCcw`     | やり直し         |
+| `Mic`             | ロゴ・録音ボタン         |
+| `AudioWaveform`   | サイドバー「クイック文字起こし」 |
+| `List`            | サイドバー「ジョブ一覧」  |
+| `Plus`            | 新規ジョブ               |
+| `Upload`          | ファイルインポート       |
+| `LogOut`          | ログアウト               |
+| `ArrowLeft`       | 戻るナビゲーション       |
+| `ExternalLink`    | 外部リンク（認証）       |
+| `Square`          | 録音停止                 |
+| `RotateCcw`       | やり直し                 |
 
 サイズは `12` 〜 `22`。通常 `12` 〜 `14` を使用。
 
-## 原則
+## UI 設計方針
+
+Apple Human Interface Guidelines に基づく。
+参照: https://developer.apple.com/jp/design/human-interface-guidelines/
+
+### 構造
+
+- **サイドバー + マスター/ディテール** — 左カラムにナビとジョブリストを常時表示。右側にコンテンツ。ページ遷移はしない
+- **ツールバー** — 各コンテンツエリア上部にタイトル + アクションボタン
+- **段階的開示** — サイドバーで概要、ディテールで詳細。情報を一度に出さない
+
+### フィードバック
+
+- すべてのデータ表示には **空状態** を用意する（アイコン + 説明テキスト）
+- 処理中のジョブはサイドバーで **ステータスを常時表示** する
+- 破壊的アクション（削除等）は **確認ダイアログ** を挟む
+
+### 操作性
+
+- 主要操作には **キーボードショートカット** を割り当てる（`⌘N` 新規、`⌘I` インポート等）
+- 音声ファイルの **ドラッグ&ドロップ** によるインポートに対応する
+- ジョブの **右クリックコンテキストメニュー** で操作できるようにする
+
+### アクセシビリティ
+
+- `aria-label` とフォーカス管理を適切に設定する
+- コントラスト比 4.5:1 以上を維持する
+- `prefers-reduced-motion` を尊重し、不要なアニメーションを無効化する
+
+## ビジュアル原則
 
 - テキストは `#222222`（暖色系ニアブラック）。純粋な黒 `#000000` は使わない
 - ブランドカラー `#ff385c` は CTA とアクセントのみ。広い面積の背景には使わない
 - 角丸は大きめ（ボタン 8px、バッジ 14px、カード 20px）
-- シャドウは 3 層構造で自然な浮き上がり
-- コンパクトなサイズ感（h-11 ナビ、text-xs ボタン、text-[13px] 本文）
+- シャドウは 3 層構造で自然な浮き上がり。カード以外はボーダー `border-[rgba(0,0,0,0.03)]` で区切る
+- コンパクトなサイズ感（text-xs ボタン、text-[13px] 本文）
 - フォントウェイトは medium 以上。thin/light は使わない
