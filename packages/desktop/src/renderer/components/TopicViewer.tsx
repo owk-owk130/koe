@@ -1,7 +1,7 @@
 import { formatDuration } from "@koe/shared";
-import type { Topic } from "@koe/shared";
+import type { useJobDetail } from "../hooks/useJobDetail";
 
-export function TopicViewer({ topics }: { topics: Topic[] }) {
+export function TopicViewer({ topics }: { topics: ReturnType<typeof useJobDetail>["topics"] }) {
   if (topics.length === 0) {
     return <p className="text-sm text-text-secondary">トピックはありません</p>;
   }

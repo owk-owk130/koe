@@ -1,17 +1,17 @@
 import { useMutation } from "@tanstack/react-query";
-import { createApiClient, formatDuration, type TranscribeResponse } from "@koe/shared";
+import { parseResponse, formatDuration } from "@koe/shared";
 import { RecordingPanel } from "./RecordingPanel";
 import { Upload } from "lucide-react";
-
-const API_URL = "http://localhost:8787";
-const api = createApiClient(API_URL);
+import { useApiClient } from "../hooks/useApiClient";
 
 export function QuickTranscribe() {
+  const client = useApiClient();
   const mutation = useMutation({
-    mutationFn: (file: File) => api.transcribe(file),
+    mutationFn: (file: File) =>
+      parseResponse(client.api.v1.transcribe.$post({ form: { audio: file } })),
   });
 
-  const result: TranscribeResponse | undefined = mutation.data;
+  const result = mutation.data;
   const loading = mutation.isPending;
   const error = mutation.error?.message ?? null;
 

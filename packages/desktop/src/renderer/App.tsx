@@ -1,17 +1,15 @@
 import { useState } from "react";
 import { QueryClient, QueryClientProvider, useMutation } from "@tanstack/react-query";
 import { Plus, Upload } from "lucide-react";
-import { createApiClient } from "@koe/shared";
+import { parseResponse } from "@koe/shared";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { useJobs, useInvalidateJobs } from "./hooks/useJobs";
+import { useApiClient } from "./hooks/useApiClient";
 import { AuthScreen } from "./components/AuthScreen";
 import { Sidebar } from "./components/Sidebar";
 import { QuickTranscribe } from "./components/QuickTranscribe";
 import { JobDetail } from "./components/JobDetail";
 import { RecordingPanel } from "./components/RecordingPanel";
-
-const API_URL = "http://localhost:8787";
-const api = createApiClient(API_URL);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -48,15 +46,18 @@ function JobsEmptyState() {
 }
 
 function AppContent() {
-  const { loading, isAuthenticated, user, token, logout } = useAuth();
+  const { loading, isAuthenticated, user, logout } = useAuth();
   const { jobs } = useJobs();
   const invalidateJobs = useInvalidateJobs();
   const [view, setView] = useState<View>("transcribe");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [showRecording, setShowRecording] = useState(false);
 
+  const client = useApiClient();
+
   const createJobMutation = useMutation({
-    mutationFn: (file: File) => api.createJob(token!, file),
+    mutationFn: (file: File) =>
+      parseResponse(client.api.v1.jobs.$post({ form: { audio: file } })),
     onSuccess: (result) => {
       invalidateJobs();
       setSelectedJobId(result.id);

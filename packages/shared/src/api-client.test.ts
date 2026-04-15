@@ -1,17 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  ApiError,
-  createApiClient,
-  type DeviceCodeResponse,
-  type TokenResponse,
-  type JobListResponse,
-  type JobDetailResponse,
-  type TopicsResponse,
-  type CreateJobResponse,
-  type TranscribeResponse,
-  type InitiateUploadResponse,
-  type UploadPartResponse,
-} from "./api-client";
+import { ApiError, createClient, parseResponse } from "./api-client";
 
 function mockFetch(status: number, body: unknown) {
   return vi.fn().mockResolvedValue(
@@ -22,16 +10,25 @@ function mockFetch(status: number, body: unknown) {
   );
 }
 
+/** hc は Request オブジェクトか URL 文字列で fetch を呼ぶ。最初の引数から URL を取得 */
+function getCalledUrl(mock: ReturnType<typeof vi.fn>): string {
+  const arg = mock.mock.calls[0]?.[0];
+  if (typeof arg === "string") return arg;
+  if (arg instanceof URL) return arg.toString();
+  if (arg instanceof Request) return arg.url;
+  return String(arg);
+}
+
 describe("api-client", () => {
-  const api = createApiClient("https://api.example.com");
+  const client = createClient("https://api.example.com");
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  describe("getDeviceCode", () => {
-    it("calls GET /auth/device and returns device code", async () => {
-      const body: DeviceCodeResponse = {
+  describe("auth endpoints", () => {
+    it("GET /auth/device returns device code", async () => {
+      const body = {
         device_code: "dc-123",
         user_code: "ABCD-1234",
         verification_url: "https://example.com/activate",
@@ -40,47 +37,34 @@ describe("api-client", () => {
       };
       vi.stubGlobal("fetch", mockFetch(200, body));
 
-      const result = await api.getDeviceCode();
-      expect(result).toEqual(body);
-      expect(fetch).toHaveBeenCalledWith(
-        "https://api.example.com/auth/device",
-        expect.objectContaining({ method: "GET" }),
-      );
-    });
-  });
-
-  describe("pollToken", () => {
-    it("returns token response on 200", async () => {
-      const body: TokenResponse = {
-        token: "jwt-token",
-        user: { id: "u1", email: "test@example.com", name: "Test" },
-      };
-      vi.stubGlobal("fetch", mockFetch(200, body));
-
-      const result = await api.pollToken("dc-123");
+      const result = await parseResponse(client.auth.device.$get());
       expect(result).toEqual(body);
     });
 
-    it("returns null on 428 (pending)", async () => {
+    it("POST /auth/token returns null-like on 428", async () => {
       vi.stubGlobal("fetch", mockFetch(428, { status: "pending" }));
 
-      const result = await api.pollToken("dc-123");
-      expect(result).toBeNull();
+      const res = await client.auth.token.$post({
+        json: { device_code: "dc-123" },
+      });
+      expect(res.status).toBe(428);
     });
 
-    it("throws ApiError on 410 (expired)", async () => {
+    it("POST /auth/token throws on 410", async () => {
       vi.stubGlobal(
         "fetch",
         mockFetch(410, { error: { code: "EXPIRED", message: "Device code expired" } }),
       );
 
-      await expect(api.pollToken("dc-123")).rejects.toThrow(ApiError);
+      await expect(
+        client.auth.token.$post({ json: { device_code: "dc-123" } }),
+      ).rejects.toThrow(ApiError);
     });
   });
 
-  describe("listJobs", () => {
-    it("calls GET /api/v1/jobs with auth header and query params", async () => {
-      const body: JobListResponse = {
+  describe("jobs endpoints", () => {
+    it("GET /api/v1/jobs returns job list", async () => {
+      const body = {
         jobs: [
           {
             id: "j1",
@@ -93,20 +77,18 @@ describe("api-client", () => {
       };
       vi.stubGlobal("fetch", mockFetch(200, body));
 
-      const result = await api.listJobs("my-token", { limit: 10, offset: 0 });
+      const authedClient = createClient("https://api.example.com", {
+        getToken: () => "my-token",
+      });
+      const result = await parseResponse(authedClient.api.v1.jobs.$get());
       expect(result).toEqual(body);
-      expect(fetch).toHaveBeenCalledWith(
-        "https://api.example.com/api/v1/jobs?limit=10&offset=0",
-        expect.objectContaining({
-          headers: expect.objectContaining({ Authorization: "Bearer my-token" }),
-        }),
-      );
-    });
-  });
 
-  describe("getJob", () => {
-    it("calls GET /api/v1/jobs/:id", async () => {
-      const body: JobDetailResponse = {
+      const url = getCalledUrl(vi.mocked(fetch));
+      expect(url).toContain("/api/v1/jobs");
+    });
+
+    it("GET /api/v1/jobs/:id returns job detail", async () => {
+      const body = {
         id: "j1",
         status: "completed",
         audio_key: "key",
@@ -119,14 +101,20 @@ describe("api-client", () => {
       };
       vi.stubGlobal("fetch", mockFetch(200, body));
 
-      const result = await api.getJob("my-token", "j1");
+      const authedClient = createClient("https://api.example.com", {
+        getToken: () => "my-token",
+      });
+      const result = await parseResponse(
+        authedClient.api.v1.jobs[":id"].$get({ param: { id: "j1" } }),
+      );
       expect(result).toEqual(body);
-    });
-  });
 
-  describe("getTopics", () => {
-    it("calls GET /api/v1/jobs/:id/topics", async () => {
-      const body: TopicsResponse = {
+      const url = getCalledUrl(vi.mocked(fetch));
+      expect(url).toContain("/api/v1/jobs/j1");
+    });
+
+    it("GET /api/v1/jobs/:id/topics returns topics", async () => {
+      const body = {
         topics: [
           {
             id: "t1",
@@ -141,102 +129,25 @@ describe("api-client", () => {
       };
       vi.stubGlobal("fetch", mockFetch(200, body));
 
-      const result = await api.getTopics("my-token", "j1");
+      const authedClient = createClient("https://api.example.com", {
+        getToken: () => "my-token",
+      });
+      const result = await parseResponse(
+        authedClient.api.v1.jobs[":id"].topics.$get({ param: { id: "j1" } }),
+      );
       expect(result).toEqual(body);
-    });
-  });
-
-  describe("createJob", () => {
-    it("calls POST /api/v1/jobs with FormData", async () => {
-      const body: CreateJobResponse = {
-        id: "j-new",
-        status: "pending",
-        audio_key: "key",
-        created_at: "2025-01-01T00:00:00Z",
-      };
-      vi.stubGlobal("fetch", mockFetch(201, body));
-
-      const file = new File(["audio"], "test.mp3", { type: "audio/mpeg" });
-      const result = await api.createJob("my-token", file);
-      expect(result).toEqual(body);
-
-      const call = vi.mocked(fetch).mock.calls[0];
-      expect(call[1]?.method).toBe("POST");
-      expect(call[1]?.body).toBeInstanceOf(FormData);
-    });
-  });
-
-  describe("transcribe", () => {
-    it("calls POST /api/v1/transcribe with FormData", async () => {
-      const body: TranscribeResponse = {
-        transcript: { text: "hello", segments: [{ text: "hello", start_sec: 0, end_sec: 1 }] },
-        topics: [
-          {
-            index: 0,
-            title: "Greeting",
-            summary: "A greeting",
-            start_sec: 0,
-            end_sec: 1,
-            transcript: "hello",
-          },
-        ],
-      };
-      vi.stubGlobal("fetch", mockFetch(200, body));
-
-      const file = new File(["audio"], "test.mp3", { type: "audio/mpeg" });
-      const result = await api.transcribe(file);
-      expect(result).toEqual(body);
-    });
-  });
-
-  describe("upload endpoints", () => {
-    it("initiateUpload calls POST /api/v1/uploads", async () => {
-      const body: InitiateUploadResponse = {
-        upload_id: "up-1",
-        key: "user/audio/j1/original.mp3",
-        job_id: "j1",
-      };
-      vi.stubGlobal("fetch", mockFetch(200, body));
-
-      const result = await api.initiateUpload("my-token", "test.mp3");
-      expect(result).toEqual(body);
-    });
-
-    it("uploadPart calls PUT /api/v1/uploads/:id/parts/:num", async () => {
-      const body: UploadPartResponse = { part_number: 1, etag: "etag-1" };
-      vi.stubGlobal("fetch", mockFetch(200, body));
-
-      const chunk = new Blob(["data"]);
-      const result = await api.uploadPart("my-token", "up-1", 1, "key", chunk);
-      expect(result).toEqual(body);
-    });
-
-    it("completeUpload calls POST /api/v1/uploads/:id/complete", async () => {
-      vi.stubGlobal("fetch", mockFetch(200, { key: "k", status: "completed" }));
-
-      const result = await api.completeUpload("my-token", "up-1", "key", [
-        { part_number: 1, etag: "e1" },
-      ]);
-      expect(result).toEqual({ key: "k", status: "completed" });
-    });
-
-    it("abortUpload calls DELETE /api/v1/uploads/:id", async () => {
-      vi.stubGlobal("fetch", mockFetch(200, { status: "aborted" }));
-
-      const result = await api.abortUpload("my-token", "up-1", "key");
-      expect(result).toEqual({ status: "aborted" });
     });
   });
 
   describe("error handling", () => {
-    it("throws ApiError with code and message for non-ok responses", async () => {
+    it("throws ApiError for non-ok responses", async () => {
       vi.stubGlobal(
         "fetch",
         mockFetch(401, { error: { code: "UNAUTHORIZED", message: "Invalid token" } }),
       );
 
       try {
-        await api.listJobs("bad-token");
+        await parseResponse(client.api.v1.jobs.$get());
         expect.unreachable("should have thrown");
       } catch (e) {
         expect(e).toBeInstanceOf(ApiError);

@@ -1,12 +1,13 @@
 import { AudioWaveform, List, LogOut, Mic, Plus } from "lucide-react";
-import { statusLabel, type Job } from "@koe/shared";
+import { statusLabel } from "@koe/shared";
+import type { useJobs } from "../hooks/useJobs";
 
 type View = "transcribe" | "jobs";
 
 interface SidebarProps {
   view: View;
   setView: (v: View) => void;
-  jobs: Job[];
+  jobs: ReturnType<typeof useJobs>["jobs"];
   selectedJobId: string | null;
   onSelectJob: (id: string) => void;
   onNewJob: () => void;
