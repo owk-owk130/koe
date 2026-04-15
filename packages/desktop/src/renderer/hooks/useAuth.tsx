@@ -18,17 +18,25 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ user: null, token: null, loading: true });
 
+  // 外部システム（electron-store）との同期: 起動時のトークン復元
   useEffect(() => {
+    let cancelled = false;
+
     async function loadAuth() {
       const token = await window.electronAPI.getToken();
+      if (cancelled) return;
       if (token) {
         const user = await window.electronAPI.getUser();
-        setState({ token, user, loading: false });
+        if (!cancelled) setState({ token, user, loading: false });
       } else {
         setState({ token: null, user: null, loading: false });
       }
     }
     loadAuth();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback(async (token: string) => {

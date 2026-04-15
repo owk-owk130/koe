@@ -3,46 +3,65 @@ import { createApiClient, type Job } from "@koe/shared";
 import { useAuth } from "./useAuth";
 
 const API_URL = "http://localhost:8787";
+const POLL_INTERVAL_MS = 5000;
+const api = createApiClient(API_URL);
 
 export function useJobs() {
   const { token } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const api = createApiClient(API_URL);
+  const jobsRef = useRef(jobs);
+  jobsRef.current = jobs;
 
-  const fetchJobs = useCallback(async () => {
+  const refresh = useCallback(async () => {
     if (!token) return;
+    setLoading(true);
     try {
       const res = await api.listJobs(token);
       setJobs(res.jobs);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to fetch jobs");
+    } finally {
+      setLoading(false);
     }
-  }, [token, api]);
+  }, [token]);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    await fetchJobs();
-    setLoading(false);
-  }, [fetchJobs]);
-
-  // Poll every 3s if any job is pending/processing
+  // 外部システム（API）との同期: 初回取得 + アクティブジョブ時のポーリング
   useEffect(() => {
     if (!token) return;
-    refresh();
 
-    timerRef.current = setInterval(() => {
-      const hasActive = jobs.some((j) => j.status === "pending" || j.status === "processing");
-      if (hasActive) fetchJobs();
-    }, 3000);
+    let cancelled = false;
+
+    async function fetch() {
+      try {
+        const res = await api.listJobs(token);
+        if (!cancelled) {
+          setJobs(res.jobs);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to fetch jobs");
+        }
+      }
+    }
+
+    fetch();
+
+    const timerId = setInterval(() => {
+      const hasActive = jobsRef.current.some(
+        (j) => j.status === "pending" || j.status === "processing",
+      );
+      if (hasActive) fetch();
+    }, POLL_INTERVAL_MS);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      cancelled = true;
+      clearInterval(timerId);
     };
-  }, [token, refresh, fetchJobs, jobs]);
+  }, [token]);
 
   return { jobs, loading, error, refresh };
 }

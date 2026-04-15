@@ -30,15 +30,23 @@ export function useRecording(): UseRecordingReturn {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamsRef = useRef<MediaStream[]>([]);
 
+  // 外部システム（Electron + MediaDevices）との同期: デバイス一覧の取得
   useEffect(() => {
+    let cancelled = false;
+
     async function init() {
       const desktopSources = await window.electronAPI.getDesktopSources();
+      if (cancelled) return;
       setSources(desktopSources);
 
       const devices = await navigator.mediaDevices.enumerateDevices();
-      setAudioDevices(devices.filter((d) => d.kind === "audioinput"));
+      if (!cancelled) setAudioDevices(devices.filter((d) => d.kind === "audioinput"));
     }
     init();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const cleanup = useCallback(() => {

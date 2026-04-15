@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createApiClient, type JobDetailResponse, type Topic } from "@koe/shared";
 import { useAuth } from "./useAuth";
 
 const API_URL = "http://localhost:8787";
+const POLL_INTERVAL_MS = 3000;
+const api = createApiClient(API_URL);
 
 export function useJobDetail(jobId: string | null) {
   const { token } = useAuth();
@@ -10,40 +12,52 @@ export function useJobDetail(jobId: string | null) {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const api = createApiClient(API_URL);
+  const jobRef = useRef(job);
+  jobRef.current = job;
 
-  const fetchDetail = useCallback(async () => {
-    if (!token || !jobId) return;
-    try {
-      const detail = await api.getJob(token, jobId);
-      setJob(detail);
-      setError(null);
-
-      if (detail.status === "completed") {
-        const res = await api.getTopics(token, jobId);
-        setTopics(res.topics);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to fetch job");
-    }
-  }, [token, jobId, api]);
-
+  // 外部システム（API）との同期: ジョブ詳細の取得 + 処理中ポーリング
   useEffect(() => {
-    if (!jobId) return;
-    setLoading(true);
-    fetchDetail().finally(() => setLoading(false));
+    if (!token || !jobId) return;
 
-    timerRef.current = setInterval(() => {
-      if (job && (job.status === "pending" || job.status === "processing")) {
-        fetchDetail();
+    let cancelled = false;
+    setJob(null);
+    setTopics([]);
+    setLoading(true);
+
+    async function fetch() {
+      try {
+        const detail = await api.getJob(token, jobId!);
+        if (cancelled) return;
+        setJob(detail);
+        setError(null);
+
+        if (detail.status === "completed") {
+          const res = await api.getTopics(token, jobId!);
+          if (!cancelled) setTopics(res.topics);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to fetch job");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    }, 3000);
+    }
+
+    fetch();
+
+    const timerId = setInterval(() => {
+      const current = jobRef.current;
+      if (current && (current.status === "pending" || current.status === "processing")) {
+        fetch();
+      }
+    }, POLL_INTERVAL_MS);
 
     return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
+      cancelled = true;
+      clearInterval(timerId);
     };
-  }, [jobId, fetchDetail, job]);
+  }, [token, jobId]);
 
   return { job, topics, loading, error };
 }
