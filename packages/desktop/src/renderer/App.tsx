@@ -87,12 +87,10 @@ function AppContent() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <AuthScreen />;
-  }
-
-  const userInitial = user?.name?.charAt(0) ?? user?.email?.charAt(0)?.toUpperCase() ?? null;
-  const userEmail = user?.email ?? null;
+  const userInitial = isAuthenticated
+    ? (user?.name?.charAt(0) ?? user?.email?.charAt(0)?.toUpperCase() ?? null)
+    : null;
+  const userEmail = isAuthenticated ? (user?.email ?? null) : null;
   const uploading = createJobMutation.isPending;
 
   const renderJobsContent = () => {
@@ -134,11 +132,14 @@ function AppContent() {
         }}
         userInitial={userInitial}
         userEmail={userEmail}
+        isAuthenticated={isAuthenticated}
       />
 
       <main className="flex flex-1 flex-col overflow-auto">
         {view === "transcribe" ? (
           <QuickTranscribe />
+        ) : !isAuthenticated ? (
+          <AuthScreen />
         ) : (
           <div className="flex flex-1 flex-col gap-5 p-6">
             {/* Toolbar */}
