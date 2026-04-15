@@ -7,7 +7,7 @@ capture voice and shape it into structured thoughts.
 ## Architecture
 
 ```
-CLI / MCP Client
+Desktop App (Electron + React) / CLI / MCP Client
     │
     ▼
 Workers (Hono/TS) ── API / 認証
@@ -26,7 +26,8 @@ Workers Containers (Go)
 packages/
 ├── api/       # Cloudflare Workers + Hono (TypeScript)
 ├── worker/    # Go - 音声処理 (server / cli / mcp)
-└── web/       # Astro + React - ビューワー (TBD)
+├── shared/    # 共有ユーティリティ (format / auth / API client)
+└── desktop/   # Electron デスクトップアプリ
 ```
 
 ## Prerequisites
@@ -58,6 +59,12 @@ go build ./...
 
 ```bash
 pnpm dev:api
+```
+
+### Desktop App (Electron)
+
+```bash
+pnpm dev:desktop
 ```
 
 ### Go CLI
@@ -107,13 +114,13 @@ pnpm deploy:api
 
 ### Go Worker (CLI / MCP)
 
-| Variable           | Required | Description                                                                      |
-| ------------------ | -------- | -------------------------------------------------------------------------------- |
-| `WHISPER_BASE_URL` | Yes      | Cloudflare Workers AI: `https://api.cloudflare.com/client/v4/accounts/{id}/ai`   |
-| `WHISPER_API_KEY`  | Yes      | Cloudflare API token (Workers AI 権限)                                           |
-| `WHISPER_MODEL`    | Yes      | モデル名 (推奨: `@cf/openai/whisper-large-v3-turbo`)                             |
-| `GEMINI_API_KEY`   | CLI: Yes / MCP: No | Gemini API key (トピック分割、MCP では任意)                             |
-| `GEMINI_MODEL`     | No       | Gemini model name (default: `gemini-2.0-flash-lite`)                             |
+| Variable           | Required           | Description                                                                    |
+| ------------------ | ------------------ | ------------------------------------------------------------------------------ |
+| `WHISPER_BASE_URL` | Yes                | Cloudflare Workers AI: `https://api.cloudflare.com/client/v4/accounts/{id}/ai` |
+| `WHISPER_API_KEY`  | Yes                | Cloudflare API token (Workers AI 権限)                                         |
+| `WHISPER_MODEL`    | Yes                | モデル名 (推奨: `@cf/openai/whisper-large-v3-turbo`)                           |
+| `GEMINI_API_KEY`   | CLI: Yes / MCP: No | Gemini API key (トピック分割、MCP では任意)                                    |
+| `GEMINI_MODEL`     | No                 | Gemini model name (default: `gemini-2.0-flash-lite`)                           |
 
 ### Workers API
 

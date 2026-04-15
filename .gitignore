@@ -3,6 +3,10 @@ dist/
 .wrangler/
 .dev.vars
 
+# Electron
+out/
+release/
+
 # Go
 /packages/worker/bin/
 /packages/worker/tmp/

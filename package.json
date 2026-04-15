@@ -3,18 +3,27 @@
   "private": true,
   "scripts": {
     "dev:api": "pnpm --filter @koe/api dev",
+    "dev:desktop": "pnpm --filter @koe/desktop dev",
+    "build:desktop": "pnpm --filter @koe/desktop build",
     "deploy:api": "pnpm --filter @koe/api deploy",
-    "lint": "oxlint",
-    "lint:fix": "oxlint --fix",
-    "format": "oxfmt --write .",
-    "format:check": "oxfmt --check .",
+    "lint": "pnpm -w exec oxlint",
+    "lint:fix": "pnpm -w exec oxlint --fix",
+    "format": "pnpm -w exec oxfmt --write .",
+    "format:check": "pnpm -w exec oxfmt --check .",
     "typecheck": "pnpm --filter @koe/api typecheck",
-    "test": "pnpm test:api && pnpm test:worker",
+    "test": "pnpm test:shared && pnpm test:api && pnpm test:worker",
+    "test:shared": "pnpm --filter @koe/shared test",
     "test:api": "pnpm --filter @koe/api test",
     "test:worker": "cd packages/worker && mise x -- go test ./..."
   },
   "devDependencies": {
     "oxfmt": "^0.44.0",
     "oxlint": "^1.59.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
   }
 }
