@@ -1,6 +1,5 @@
-import { hc } from "hono/client";
+import { hc, type InferResponseType } from "hono/client";
 import type { AppType } from "@koe/api";
-import type { InferResponseType } from "hono/client";
 
 export class ApiError extends Error {
   constructor(
@@ -23,30 +22,30 @@ async function throwIfError(res: { ok: boolean; status: number; json(): Promise<
   }
 }
 
-// --- 型 export（hc クライアントから推論） ---
+// --- 型 export（hc プロキシから typeof で導出） ---
 
-type Client = ReturnType<typeof hc<AppType>>;
+const $api = hc<AppType>("");
 
-export type DeviceCodeResponse = InferResponseType<Client["auth"]["device"]["$get"]>;
-export type TokenResponse = InferResponseType<Client["auth"]["token"]["$post"], 200>;
-export type JobListResponse = InferResponseType<Client["api"]["v1"]["jobs"]["$get"]>;
+export type DeviceCodeResponse = InferResponseType<typeof $api.auth.device.$get>;
+export type TokenResponse = InferResponseType<typeof $api.auth.token.$post, 200>;
+export type JobListResponse = InferResponseType<typeof $api.api.v1.jobs.$get>;
 export type Job = JobListResponse["jobs"][number];
-export type JobDetailResponse = InferResponseType<Client["api"]["v1"]["jobs"][":id"]["$get"]>;
+export type JobDetailResponse = InferResponseType<typeof $api.api.v1.jobs[":id"]["$get"]>;
 export type TopicsResponse = InferResponseType<
-  Client["api"]["v1"]["jobs"][":id"]["topics"]["$get"]
+  typeof $api.api.v1.jobs[":id"]["topics"]["$get"]
 >;
 export type Topic = TopicsResponse["topics"][number];
-export type CreateJobResponse = InferResponseType<Client["api"]["v1"]["jobs"]["$post"], 201>;
-export type TranscribeResponse = InferResponseType<Client["api"]["v1"]["transcribe"]["$post"]>;
-export type InitiateUploadResponse = InferResponseType<Client["api"]["v1"]["uploads"]["$post"]>;
+export type CreateJobResponse = InferResponseType<typeof $api.api.v1.jobs.$post, 201>;
+export type TranscribeResponse = InferResponseType<typeof $api.api.v1.transcribe.$post>;
+export type InitiateUploadResponse = InferResponseType<typeof $api.api.v1.uploads.$post>;
 export type UploadPartResponse = InferResponseType<
-  Client["api"]["v1"]["uploads"][":uploadId"]["parts"][":partNumber"]["$put"]
+  typeof $api.api.v1.uploads[":uploadId"]["parts"][":partNumber"]["$put"]
 >;
 export type CompleteUploadResponse = InferResponseType<
-  Client["api"]["v1"]["uploads"][":uploadId"]["complete"]["$post"]
+  typeof $api.api.v1.uploads[":uploadId"]["complete"]["$post"]
 >;
 export type AbortUploadResponse = InferResponseType<
-  Client["api"]["v1"]["uploads"][":uploadId"]["$delete"]
+  typeof $api.api.v1.uploads[":uploadId"]["$delete"]
 >;
 
 // --- API クライアント ---
