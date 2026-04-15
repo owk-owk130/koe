@@ -4,7 +4,7 @@ import type { Env } from "../types";
 
 export class AppError extends Error {
   constructor(
-    public readonly status: number,
+    public readonly status: ContentfulStatusCode,
     public readonly code: string,
     message: string,
   ) {
@@ -15,10 +15,7 @@ export class AppError extends Error {
 
 export const onError: ErrorHandler<Env> = (err, c) => {
   if (err instanceof AppError) {
-    return c.json(
-      { error: { code: err.code, message: err.message } },
-      err.status as ContentfulStatusCode,
-    );
+    return c.json({ error: { code: err.code, message: err.message } }, err.status);
   }
 
   console.error("Unhandled error:", err);
