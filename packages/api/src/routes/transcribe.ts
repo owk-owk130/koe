@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import type { Env } from "../types";
-import { AppError } from "../lib/errors";
-import { optionalAuth } from "../middleware/auth";
-import { rateLimit } from "../middleware/rate-limit";
-import { processAudioDirect } from "../services/container-service";
+import type { Env } from "~/types";
+import { AppError } from "~/lib/errors";
+import { optionalAuth } from "~/middleware/auth";
+import { rateLimit } from "~/middleware/rate-limit";
+import { processAudioDirect } from "~/services/container-service";
 
 const transcribe = new Hono<Env>()
   .use("/*", optionalAuth())

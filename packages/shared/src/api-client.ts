@@ -16,9 +16,9 @@ export class ApiError extends Error {
 const errorHandlingFetch: typeof fetch = async (input, init) => {
   const res = await fetch(input, init);
   if (!res.ok && res.status !== 428) {
-    const body = (await res.json().catch(() => null)) as
-      | { error?: { code?: string; message?: string } }
-      | null;
+    const body = (await res.json().catch(() => null)) as {
+      error?: { code?: string; message?: string };
+    } | null;
     const err = body?.error;
     throw new ApiError(err?.code ?? "UNKNOWN", err?.message ?? "Unknown error", res.status);
   }

@@ -13,7 +13,7 @@ import { tmpdir } from "os";
 import { is } from "@electron-toolkit/utils";
 import Store from "electron-store";
 import { isTokenExpired, parseUser } from "@koe/shared";
-import { IPC } from "../shared/ipc-channels";
+import { IPC } from "~/shared/ipc-channels";
 import { createTray, updateTrayState } from "./tray";
 
 const store = new Store<{ token?: string }>({ encryptionKey: "koe-desktop" });

@@ -2,7 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { parseResponse, formatDuration } from "@koe/shared";
 import { RecordingPanel } from "./RecordingPanel";
 import { Upload } from "lucide-react";
-import { useApiClient } from "../hooks/useApiClient";
+import { useApiClient } from "~/renderer/hooks/useApiClient";
 
 export function QuickTranscribe() {
   const client = useApiClient();

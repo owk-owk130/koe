@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
-import type { Env } from "../types";
-import { verifyToken } from "../services/auth-service";
-import { findUserById } from "../repositories/user-repository";
+import type { Env } from "~/types";
+import { verifyToken } from "~/services/auth-service";
+import { findUserById } from "~/repositories/user-repository";
 
 const extractToken = (header: string | undefined): string | null => {
   if (!header?.startsWith("Bearer ")) return null;

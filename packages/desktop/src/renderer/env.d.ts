@@ -1,4 +1,4 @@
-import type { ElectronAPI } from "../shared/ipc-channels";
+import type { ElectronAPI } from "~/shared/ipc-channels";
 
 declare global {
   interface Window {

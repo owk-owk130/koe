@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
-import { IPC } from "../shared/ipc-channels";
-import type { ElectronAPI } from "../shared/ipc-channels";
+import { IPC } from "~/shared/ipc-channels";
+import type { ElectronAPI } from "~/shared/ipc-channels";
 
 const electronAPI: ElectronAPI = {
   // Auth

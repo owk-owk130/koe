@@ -6,8 +6,5 @@ const API_URL = "http://localhost:8787";
 
 export function useApiClient() {
   const { token } = useAuth();
-  return useMemo(
-    () => createClient(API_URL, { getToken: () => token }),
-    [token],
-  );
+  return useMemo(() => createClient(API_URL, { getToken: () => token }), [token]);
 }

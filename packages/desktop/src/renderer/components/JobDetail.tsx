@@ -1,6 +1,6 @@
 import { formatDate, formatDuration } from "@koe/shared";
 import { ArrowLeft } from "lucide-react";
-import { useJobDetail } from "../hooks/useJobDetail";
+import { useJobDetail } from "~/renderer/hooks/useJobDetail";
 import { StatusBadge } from "./StatusBadge";
 import { JobProgress } from "./JobProgress";
 import { TopicViewer } from "./TopicViewer";

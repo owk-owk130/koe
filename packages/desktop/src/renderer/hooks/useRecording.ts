@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { DesktopSource, RecordingState } from "../../shared/ipc-channels";
+import type { DesktopSource, RecordingState } from "~/shared/ipc-channels";
 
 export type AudioSourceMode = "mic" | "system" | "both";
 

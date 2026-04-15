@@ -1,13 +1,13 @@
 import { Hono } from "hono";
-import type { Env } from "../types";
-import { AppError } from "../lib/errors";
+import type { Env } from "~/types";
+import { AppError } from "~/lib/errors";
 import {
   startDeviceFlow,
   exchangeDeviceCode,
   decodeGoogleIdToken,
   signToken,
-} from "../services/auth-service";
-import { findUserByGoogleId, createUser } from "../repositories/user-repository";
+} from "~/services/auth-service";
+import { findUserByGoogleId, createUser } from "~/repositories/user-repository";
 
 const auth = new Hono<Env>()
   .get("/device", async (c) => {

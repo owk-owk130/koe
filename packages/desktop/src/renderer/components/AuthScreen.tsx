@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Mic } from "lucide-react";
 import { createClient } from "@koe/shared";
-import { useAuth } from "../hooks/useAuth";
+import { useAuth } from "~/renderer/hooks/useAuth";
 
 const API_URL = "http://localhost:8787";
 const client = createClient(API_URL);
 
 type FlowState = "idle" | "polling" | "success" | "error";
-type DeviceCode = Awaited<ReturnType<typeof client.auth.device.$get>> extends { json(): Promise<infer T> } ? T : never;
+type DeviceCode =
+  Awaited<ReturnType<typeof client.auth.device.$get>> extends { json(): Promise<infer T> }
+    ? T
+    : never;
 
 export function AuthScreen() {
   const { login } = useAuth();
