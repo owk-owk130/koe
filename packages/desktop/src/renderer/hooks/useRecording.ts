@@ -86,12 +86,12 @@ export function useRecording(): UseRecordingReturn {
               },
             },
           });
+          // video track は stop せず disabled にして残す（Electron の capture pipeline が video を必要とするため）
           sysStream.getVideoTracks().forEach((t) => {
-            t.stop();
-            sysStream.removeTrack(t);
+            t.enabled = false;
           });
-          stream = sysStream;
-          streamsRef.current = [stream];
+          stream = new MediaStream(sysStream.getAudioTracks());
+          streamsRef.current = [sysStream];
         } else {
           const src = sources[0];
           if (!src) throw new Error("No screen source available");
@@ -112,9 +112,9 @@ export function useRecording(): UseRecordingReturn {
             },
           });
           sysStream.getVideoTracks().forEach((t) => {
-            t.stop();
-            sysStream.removeTrack(t);
+            t.enabled = false;
           });
+          const sysAudioStream = new MediaStream(sysStream.getAudioTracks());
 
           const micStream = await navigator.mediaDevices.getUserMedia({
             audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true,
@@ -122,7 +122,7 @@ export function useRecording(): UseRecordingReturn {
 
           const ctx = new AudioContext();
           const dest = ctx.createMediaStreamDestination();
-          ctx.createMediaStreamSource(sysStream).connect(dest);
+          ctx.createMediaStreamSource(sysAudioStream).connect(dest);
           ctx.createMediaStreamSource(micStream).connect(dest);
           stream = dest.stream;
           streamsRef.current = [sysStream, micStream];
