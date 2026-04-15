@@ -38,12 +38,15 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 			t.Errorf("expected responseMimeType 'application/json', got %q", req.GenerationConfig.ResponseMimeType)
 		}
 
-		// Respond with Gemini format containing JSON topics
-		topics := []Topic{
-			{Index: 0, Title: "挨拶", Summary: "挨拶の場面", StartSec: 0, EndSec: 30, Transcript: "こんにちは"},
-			{Index: 1, Title: "本題", Summary: "本題の議論", StartSec: 30, EndSec: 120, Transcript: "今日は天気について話しましょう"},
+		// Respond with Gemini format containing JSON analysis result
+		analysisResult := AnalysisResult{
+			Summary: "挨拶から始まり、天気について議論する会話。",
+			Topics: []Topic{
+				{Index: 0, Title: "挨拶", Summary: "挨拶の場面", Detail: "会話の冒頭で参加者が挨拶を交わしている場面。", StartSec: 0, EndSec: 30, Transcript: "こんにちは"},
+				{Index: 1, Title: "本題", Summary: "本題の議論", Detail: "天気について話し合う本題に入り、今日の天気予報や週末の天候について意見を交換している。", StartSec: 30, EndSec: 120, Transcript: "今日は天気について話しましょう"},
+			},
 		}
-		topicsJSON, _ := json.Marshal(topics)
+		topicsJSON, _ := json.Marshal(analysisResult)
 
 		resp := geminiResponse{
 			Candidates: []geminiCandidate{{
@@ -68,19 +71,25 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 		{Text: "今日は天気について話しましょう", StartSec: 30, EndSec: 120},
 	}
 
-	topics, err := analyzer.Analyze(context.Background(), "こんにちは\n今日は天気について話しましょう", segments)
+	result, err := analyzer.Analyze(context.Background(), "こんにちは\n今日は天気について話しましょう", segments)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(topics) != 2 {
-		t.Fatalf("expected 2 topics, got %d", len(topics))
+	if result.Summary == "" {
+		t.Error("expected non-empty summary")
 	}
-	if topics[0].Title != "挨拶" {
-		t.Errorf("topics[0].Title = %q, want '挨拶'", topics[0].Title)
+	if len(result.Topics) != 2 {
+		t.Fatalf("expected 2 topics, got %d", len(result.Topics))
 	}
-	if topics[1].StartSec != 30 {
-		t.Errorf("topics[1].StartSec = %f, want 30", topics[1].StartSec)
+	if result.Topics[0].Title != "挨拶" {
+		t.Errorf("topics[0].Title = %q, want '挨拶'", result.Topics[0].Title)
+	}
+	if result.Topics[0].Detail == "" {
+		t.Error("expected non-empty detail for topics[0]")
+	}
+	if result.Topics[1].StartSec != 30 {
+		t.Errorf("topics[1].StartSec = %f, want 30", result.Topics[1].StartSec)
 	}
 }
 
@@ -105,10 +114,15 @@ func TestGeminiAnalyzer_Analyze_APIError(t *testing.T) {
 
 func TestGeminiAnalyzer_Analyze_EmptyResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		result := AnalysisResult{
+			Summary: "短いテキスト。",
+			Topics:  []Topic{},
+		}
+		resultJSON, _ := json.Marshal(result)
 		resp := geminiResponse{
 			Candidates: []geminiCandidate{{
 				Content: geminiContent{
-					Parts: []geminiPart{{Text: "[]"}},
+					Parts: []geminiPart{{Text: string(resultJSON)}},
 				},
 			}},
 		}
@@ -118,11 +132,11 @@ func TestGeminiAnalyzer_Analyze_EmptyResponse(t *testing.T) {
 	defer srv.Close()
 
 	analyzer := &GeminiAnalyzer{APIKey: "key", BaseURL: srv.URL, Model: "gemini-2.0-flash-lite"}
-	topics, err := analyzer.Analyze(context.Background(), "short text", nil)
+	result, err := analyzer.Analyze(context.Background(), "short text", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(topics) != 0 {
-		t.Errorf("expected 0 topics, got %d", len(topics))
+	if len(result.Topics) != 0 {
+		t.Errorf("expected 0 topics, got %d", len(result.Topics))
 	}
 }

@@ -64,15 +64,23 @@ func (g *GeminiAnalyzer) baseURL() string {
 
 func buildPrompt(transcript string, segments []whisper.Segment) string {
 	segJSON, _ := json.Marshal(segments)
-	return fmt.Sprintf(`以下の音声文字起こしテキストをトピックごとに分割してください。
+	return fmt.Sprintf(`以下の音声文字起こしテキストを分析し、全体の要約とトピック分割を行ってください。
 
-各トピックについて以下の情報をJSON配列で返してください:
-- index: トピックの通し番号(0始まり)
-- title: トピックのタイトル(簡潔に)
-- summary: トピックの要約(1-2文)
-- start_sec: 開始時刻(秒)
-- end_sec: 終了時刻(秒)
-- transcript: そのトピックに該当する文字起こしテキスト
+以下の構造のJSONオブジェクトで返してください:
+{
+  "summary": "音声全体の要約(2-3文で、何についての話か一目でわかるように)",
+  "topics": [
+    {
+      "index": 0,
+      "title": "トピックのタイトル(簡潔に)",
+      "summary": "トピックの要約(1-2文)",
+      "detail": "トピックの詳細な説明(段落レベルで、議論の内容や重要なポイントを詳しく記述)",
+      "start_sec": 0.0,
+      "end_sec": 60.0,
+      "transcript": "そのトピックに該当する文字起こしテキスト"
+    }
+  ]
+}
 
 ## タイムスタンプ付きセグメント
 %s
@@ -82,7 +90,7 @@ func buildPrompt(transcript string, segments []whisper.Segment) string {
 }
 
 // Analyze implements the Analyzer interface.
-func (g *GeminiAnalyzer) Analyze(ctx context.Context, transcript string, segments []whisper.Segment) ([]Topic, error) {
+func (g *GeminiAnalyzer) Analyze(ctx context.Context, transcript string, segments []whisper.Segment) (*AnalysisResult, error) {
 	prompt := buildPrompt(transcript, segments)
 
 	reqBody := geminiRequest{
@@ -129,10 +137,10 @@ func (g *GeminiAnalyzer) Analyze(ctx context.Context, transcript string, segment
 
 	text := geminiResp.Candidates[0].Content.Parts[0].Text
 
-	var topics []Topic
-	if err := json.Unmarshal([]byte(text), &topics); err != nil {
-		return nil, fmt.Errorf("parse topics JSON: %w (raw: %s)", err, text)
+	var result AnalysisResult
+	if err := json.Unmarshal([]byte(text), &result); err != nil {
+		return nil, fmt.Errorf("parse analysis JSON: %w (raw: %s)", err, text)
 	}
 
-	return topics, nil
+	return &result, nil
 }

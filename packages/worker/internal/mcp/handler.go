@@ -26,8 +26,8 @@ type Handler struct {
 // NoopAnalyzer is an Analyzer that returns no topics (for transcribe-only mode).
 type NoopAnalyzer struct{}
 
-func (NoopAnalyzer) Analyze(_ context.Context, _ string, _ []whisper.Segment) ([]topic.Topic, error) {
-	return nil, nil
+func (NoopAnalyzer) Analyze(_ context.Context, _ string, _ []whisper.Segment) (*topic.AnalysisResult, error) {
+	return &topic.AnalysisResult{}, nil
 }
 
 func extractAudioPath(req mcp.CallToolRequest) (string, error) {

@@ -132,11 +132,13 @@ func TestHandleTranscribeSplit_Success(t *testing.T) {
 				{Text: "goodbye world.", StartSec: 2.5, EndSec: 5.0},
 			},
 		},
+		Summary: "A conversation with a greeting and farewell.",
 		Topics: []topic.Topic{
 			{
 				Index:      0,
 				Title:      "Greeting",
 				Summary:    "A greeting",
+				Detail:     "The speaker greets the audience warmly.",
 				StartSec:   0,
 				EndSec:     2.5,
 				Transcript: "hello world.",
@@ -145,6 +147,7 @@ func TestHandleTranscribeSplit_Success(t *testing.T) {
 				Index:      1,
 				Title:      "Farewell",
 				Summary:    "A farewell",
+				Detail:     "The speaker says goodbye to the audience.",
 				StartSec:   2.5,
 				EndSec:     5.0,
 				Transcript: "goodbye world.",

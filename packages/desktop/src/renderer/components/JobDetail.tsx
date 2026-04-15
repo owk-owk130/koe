@@ -79,6 +79,12 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
 
       {job.status === "completed" && (
         <div className="space-y-3">
+          {job.summary && (
+            <div className="rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-[#f8f8f8] p-4">
+              <h3 className="text-[13px] font-semibold text-text-primary">概要</h3>
+              <p className="mt-1 text-xs leading-relaxed text-text-secondary">{job.summary}</p>
+            </div>
+          )}
           <h3 className="text-[15px] font-semibold text-text-primary">トピック</h3>
           <TopicViewer topics={topics} />
         </div>

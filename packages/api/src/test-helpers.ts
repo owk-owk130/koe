@@ -20,6 +20,7 @@ const migrations = [
         total_chunks INTEGER,
         completed_chunks INTEGER DEFAULT 0,
         error TEXT,
+        summary TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`,
@@ -42,6 +43,7 @@ const migrations = [
         topic_index INTEGER NOT NULL,
         title TEXT NOT NULL,
         summary TEXT,
+        detail TEXT,
         start_sec REAL,
         end_sec REAL,
         transcript TEXT NOT NULL,

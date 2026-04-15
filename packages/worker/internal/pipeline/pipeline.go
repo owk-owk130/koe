@@ -27,6 +27,7 @@ type ChunkResult struct {
 // Result represents the output of a pipeline run.
 type Result struct {
 	Transcript whisper.Transcript `json:"transcript"`
+	Summary    string             `json:"summary"`
 	Topics     []topic.Topic      `json:"topics"`
 	Chunks     []ChunkResult      `json:"chunks"`
 }
@@ -73,14 +74,15 @@ func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
 	}
 
 	// 3. Analyze topics
-	topics, err := p.Analyzer.Analyze(ctx, fullText, allSegments)
+	analysis, err := p.Analyzer.Analyze(ctx, fullText, allSegments)
 	if err != nil {
 		return nil, err
 	}
 
 	return &Result{
 		Transcript: transcript,
-		Topics:     topics,
+		Summary:    analysis.Summary,
+		Topics:     analysis.Topics,
 		Chunks:     chunkResults,
 	}, nil
 }

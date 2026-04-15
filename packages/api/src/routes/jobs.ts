@@ -96,6 +96,7 @@ const jobs = new Hono<Env>()
       total_chunks: job.totalChunks,
       completed_chunks: job.completedChunks,
       error: job.error,
+      summary: job.summary,
       created_at: job.createdAt,
       updated_at: job.updatedAt,
     });
@@ -117,6 +118,7 @@ const jobs = new Hono<Env>()
         topic_index: t.topicIndex,
         title: t.title,
         summary: t.summary,
+        detail: t.detail,
         start_sec: t.startSec,
         end_sec: t.endSec,
         transcript: t.transcript,

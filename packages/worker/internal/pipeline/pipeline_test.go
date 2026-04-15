@@ -34,12 +34,12 @@ func (m *mockTranscriber) Transcribe(_ context.Context, audioPath string) (*whis
 }
 
 type mockAnalyzer struct {
-	topics []topic.Topic
+	result *topic.AnalysisResult
 	err    error
 }
 
-func (m *mockAnalyzer) Analyze(_ context.Context, _ string, _ []whisper.Segment) ([]topic.Topic, error) {
-	return m.topics, m.err
+func (m *mockAnalyzer) Analyze(_ context.Context, _ string, _ []whisper.Segment) (*topic.AnalysisResult, error) {
+	return m.result, m.err
 }
 
 // --- tests ---
@@ -61,15 +61,18 @@ func TestPipeline_Run(t *testing.T) {
 		},
 	}
 
-	topics := []topic.Topic{
-		{Index: 0, Title: "Greeting", Summary: "A greeting", StartSec: 0, EndSec: 30},
-		{Index: 1, Title: "Farewell", Summary: "A farewell", StartSec: 30, EndSec: 60},
+	analysisResult := &topic.AnalysisResult{
+		Summary: "A conversation with greeting and farewell.",
+		Topics: []topic.Topic{
+			{Index: 0, Title: "Greeting", Summary: "A greeting", StartSec: 0, EndSec: 30},
+			{Index: 1, Title: "Farewell", Summary: "A farewell", StartSec: 30, EndSec: 60},
+		},
 	}
 
 	p := &Pipeline{
 		Splitter:    &mockSplitter{chunks: chunks},
 		Transcriber: &mockTranscriber{results: transcripts},
-		Analyzer:    &mockAnalyzer{topics: topics},
+		Analyzer:    &mockAnalyzer{result: analysisResult},
 	}
 
 	result, err := p.Run(context.Background(), Input{
@@ -83,6 +86,10 @@ func TestPipeline_Run(t *testing.T) {
 
 	if len(result.Transcript.Segments) != 2 {
 		t.Errorf("expected 2 segments, got %d", len(result.Transcript.Segments))
+	}
+
+	if result.Summary != "A conversation with greeting and farewell." {
+		t.Errorf("expected summary, got %q", result.Summary)
 	}
 
 	if len(result.Topics) != 2 {

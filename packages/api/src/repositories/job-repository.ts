@@ -7,6 +7,7 @@ export type Job = {
   totalChunks: number | null;
   completedChunks: number;
   error: string | null;
+  summary: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -17,6 +18,7 @@ export type Topic = {
   topicIndex: number;
   title: string;
   summary: string | null;
+  detail: string | null;
   startSec: number | null;
   endSec: number | null;
   transcript: string;
@@ -33,6 +35,7 @@ type JobRow = {
   total_chunks: number | null;
   completed_chunks: number;
   error: string | null;
+  summary: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -43,6 +46,7 @@ type TopicRow = {
   topic_index: number;
   title: string;
   summary: string | null;
+  detail: string | null;
   start_sec: number | null;
   end_sec: number | null;
   transcript: string;
@@ -59,6 +63,7 @@ const toJob = (row: JobRow): Job => ({
   totalChunks: row.total_chunks,
   completedChunks: row.completed_chunks,
   error: row.error,
+  summary: row.summary,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -69,6 +74,7 @@ const toTopic = (row: TopicRow): Topic => ({
   topicIndex: row.topic_index,
   title: row.title,
   summary: row.summary,
+  detail: row.detail,
   startSec: row.start_sec,
   endSec: row.end_sec,
   transcript: row.transcript,
@@ -127,6 +133,7 @@ export type TopicInput = {
   topicIndex: number;
   title: string;
   summary?: string;
+  detail?: string;
   startSec?: number;
   endSec?: number;
   transcript: string;
@@ -139,7 +146,7 @@ export const createTopics = async (
   topics: TopicInput[],
 ): Promise<void> => {
   const stmt = db.prepare(
-    "INSERT INTO topics (id, job_id, topic_index, title, summary, start_sec, end_sec, transcript, transcript_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO topics (id, job_id, topic_index, title, summary, detail, start_sec, end_sec, transcript, transcript_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
   );
 
   await db.batch(
@@ -150,6 +157,7 @@ export const createTopics = async (
         t.topicIndex,
         t.title,
         t.summary ?? null,
+        t.detail ?? null,
         t.startSec ?? null,
         t.endSec ?? null,
         t.transcript,
