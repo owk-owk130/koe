@@ -56,8 +56,7 @@ function AppContent() {
   const client = useApiClient();
 
   const createJobMutation = useMutation({
-    mutationFn: (file: File) =>
-      parseResponse(client.api.v1.jobs.$post({ form: { audio: file } })),
+    mutationFn: (file: File) => parseResponse(client.api.v1.jobs.$post({ form: { audio: file } })),
     onSuccess: (result) => {
       invalidateJobs();
       setSelectedJobId(result.id);
@@ -106,9 +105,7 @@ function AppContent() {
         {showRecording && (
           <div className="rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
             <RecordingPanel onRecordingComplete={handleRecordingComplete} />
-            {uploading && (
-              <p className="mt-2 text-[11px] text-text-secondary">アップロード中...</p>
-            )}
+            {uploading && <p className="mt-2 text-[11px] text-text-secondary">アップロード中...</p>}
           </div>
         )}
 

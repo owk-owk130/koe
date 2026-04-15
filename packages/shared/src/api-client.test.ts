@@ -56,9 +56,9 @@ describe("api-client", () => {
         mockFetch(410, { error: { code: "EXPIRED", message: "Device code expired" } }),
       );
 
-      await expect(
-        client.auth.token.$post({ json: { device_code: "dc-123" } }),
-      ).rejects.toThrow(ApiError);
+      await expect(client.auth.token.$post({ json: { device_code: "dc-123" } })).rejects.toThrow(
+        ApiError,
+      );
     });
   });
 

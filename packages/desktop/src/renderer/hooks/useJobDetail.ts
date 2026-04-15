@@ -9,8 +9,7 @@ export function useJobDetail(jobId: string | null) {
 
   const jobQuery = useQuery({
     queryKey: ["job", jobId],
-    queryFn: () =>
-      parseResponse(client.api.v1.jobs[":id"].$get({ param: { id: jobId! } })),
+    queryFn: () => parseResponse(client.api.v1.jobs[":id"].$get({ param: { id: jobId! } })),
     enabled: !!token && !!jobId,
     refetchInterval: ({ state }) => {
       const status = state.data?.status;
@@ -20,8 +19,7 @@ export function useJobDetail(jobId: string | null) {
 
   const topicsQuery = useQuery({
     queryKey: ["topics", jobId],
-    queryFn: () =>
-      parseResponse(client.api.v1.jobs[":id"].topics.$get({ param: { id: jobId! } })),
+    queryFn: () => parseResponse(client.api.v1.jobs[":id"].topics.$get({ param: { id: jobId! } })),
     enabled: !!token && !!jobId && jobQuery.data?.status === "completed",
   });
 

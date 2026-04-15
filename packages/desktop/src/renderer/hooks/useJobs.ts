@@ -13,9 +13,7 @@ export function useJobs() {
     enabled: !!token,
     refetchInterval: ({ state }) => {
       const jobs = state.data?.jobs;
-      const hasActive = jobs?.some(
-        (j) => j.status === "pending" || j.status === "processing",
-      );
+      const hasActive = jobs?.some((j) => j.status === "pending" || j.status === "processing");
       return hasActive ? 5000 : false;
     },
   });
