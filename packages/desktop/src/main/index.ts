@@ -19,6 +19,7 @@ import { createTray, updateTrayState } from "./tray";
 const store = new Store<{ token?: string }>({ encryptionKey: "koe-desktop" });
 
 let mainWindow: BrowserWindow | null = null;
+let isQuitting = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -41,7 +42,7 @@ function createWindow() {
 
   // macOS: hide window instead of closing
   mainWindow.on("close", (e) => {
-    if (process.platform === "darwin" && !app.isQuitting) {
+    if (process.platform === "darwin" && !isQuitting) {
       e.preventDefault();
       mainWindow?.hide();
     }
@@ -142,6 +143,12 @@ ipcMain.handle(IPC.APP_GET_VERSION, () => app.getVersion());
 
 ipcMain.handle(IPC.APP_OPEN_EXTERNAL, (_, url: string) => shell.openExternal(url));
 
+ipcMain.handle(IPC.APP_OPEN_SCREEN_RECORDING_SETTINGS, () =>
+  shell.openExternal(
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+  ),
+);
+
 // ---- Upload IPC (stub — full implementation in Step 9) ----
 
 ipcMain.handle(IPC.UPLOAD_MULTIPART, async (_, _filePath: string, _token: string) => {
@@ -182,6 +189,6 @@ if (!gotLock) {
   });
 
   app.on("before-quit", () => {
-    (app as typeof app & { isQuitting: boolean }).isQuitting = true;
+    isQuitting = true;
   });
 }

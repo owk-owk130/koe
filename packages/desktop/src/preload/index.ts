@@ -38,6 +38,7 @@ const electronAPI: ElectronAPI = {
   // App
   getVersion: () => ipcRenderer.invoke(IPC.APP_GET_VERSION),
   openExternal: (url) => ipcRenderer.invoke(IPC.APP_OPEN_EXTERNAL, url),
+  openScreenRecordingSettings: () => ipcRenderer.invoke(IPC.APP_OPEN_SCREEN_RECORDING_SETTINGS),
 
   // Upload
   multipartUpload: (filePath, token) => ipcRenderer.invoke(IPC.UPLOAD_MULTIPART, filePath, token),

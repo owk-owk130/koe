@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Mic, Square, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Mic, Square, RotateCcw, Settings } from "lucide-react";
 import { formatDuration } from "@koe/shared";
 import { useRecording, type AudioSourceMode } from "~/renderer/hooks/useRecording";
 
@@ -22,6 +22,24 @@ export function RecordingPanel({ onRecordingComplete }: RecordingPanelProps) {
 
   const [mode, setMode] = useState<AudioSourceMode>("mic");
   const [selectedDevice, setSelectedDevice] = useState("");
+  const [screenPermission, setScreenPermission] = useState<boolean | null>(null);
+
+  const needsScreenPermission = mode === "system" || mode === "both";
+
+  const checkScreenPermission = useCallback(async () => {
+    const status = await window.electronAPI.checkPermissions();
+    setScreenPermission(status.screen);
+  }, []);
+
+  useEffect(() => {
+    if (needsScreenPermission) {
+      checkScreenPermission();
+    }
+  }, [needsScreenPermission, checkScreenPermission]);
+
+  const handleOpenSettings = async () => {
+    await window.electronAPI.openScreenRecordingSettings();
+  };
 
   const handleStart = () => startRecording(mode, selectedDevice || undefined);
 
@@ -64,16 +82,35 @@ export function RecordingPanel({ onRecordingComplete }: RecordingPanelProps) {
         </select>
       )}
 
-      <div className="flex items-center gap-3">
-        {state === "idle" && !audioUrl && (
+      {needsScreenPermission && screenPermission === false && (
+        <div className="rounded-button border border-border bg-surface px-3 py-2">
+          <p className="text-xs text-text-secondary">
+            システム音声の録音には「画面収録」の権限が必要です。
+            <br />
+            システム設定で許可した後、アプリを再起動してください。
+          </p>
           <button
-            onClick={handleStart}
-            className="flex items-center gap-1.5 rounded-button bg-brand px-4 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            onClick={handleOpenSettings}
+            className="mt-2 flex items-center gap-1.5 rounded-button border border-border px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface"
           >
-            <Mic size={14} />
-            録音開始
+            <Settings size={14} />
+            システム設定を開く
           </button>
-        )}
+        </div>
+      )}
+
+      <div className="flex items-center gap-3">
+        {state === "idle" &&
+          !audioUrl &&
+          !(needsScreenPermission && screenPermission === false) && (
+            <button
+              onClick={handleStart}
+              className="flex items-center gap-1.5 rounded-button bg-brand px-4 py-1.5 text-xs font-medium text-white hover:opacity-90"
+            >
+              <Mic size={14} />
+              録音開始
+            </button>
+          )}
 
         {state === "recording" && (
           <>
