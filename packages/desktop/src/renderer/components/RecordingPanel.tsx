@@ -30,16 +30,17 @@ export function RecordingPanel({ onRecordingComplete }: RecordingPanelProps) {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Source selection */}
-      <div className="flex gap-2">
+    <div className="space-y-3">
+      <div className="flex gap-1.5">
         {(["mic", "system", "both"] as const).map((m) => (
           <button
             key={m}
             onClick={() => setMode(m)}
             disabled={state === "recording"}
-            className={`rounded-lg px-3 py-1.5 text-sm ${
-              mode === m ? "bg-blue-600 text-white" : "bg-gray-100 hover:bg-gray-200"
+            className={`rounded-button px-3 py-1.5 text-xs font-medium ${
+              mode === m
+                ? "bg-text-primary text-white"
+                : "border border-border text-text-primary hover:bg-surface"
             }`}
           >
             {m === "mic" ? "マイク" : m === "system" ? "システム音声" : "両方"}
@@ -47,13 +48,12 @@ export function RecordingPanel({ onRecordingComplete }: RecordingPanelProps) {
         ))}
       </div>
 
-      {/* Device selector */}
       {(mode === "mic" || mode === "both") && audioDevices.length > 0 && (
         <select
           value={selectedDevice}
           onChange={(e) => setSelectedDevice(e.target.value)}
           disabled={state === "recording"}
-          className="w-full rounded border px-3 py-2 text-sm"
+          className="w-full rounded-button border border-border px-3 py-1.5 text-xs text-text-primary"
         >
           <option value="">デフォルトマイク</option>
           {audioDevices.map((d) => (
@@ -64,14 +64,13 @@ export function RecordingPanel({ onRecordingComplete }: RecordingPanelProps) {
         </select>
       )}
 
-      {/* Controls */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         {state === "idle" && !audioUrl && (
           <button
             onClick={handleStart}
-            className="flex items-center gap-2 rounded-lg bg-red-500 px-4 py-2 text-white hover:bg-red-600"
+            className="flex items-center gap-1.5 rounded-button bg-brand px-4 py-1.5 text-xs font-medium text-white hover:opacity-90"
           >
-            <Mic size={18} />
+            <Mic size={14} />
             録音開始
           </button>
         )}
@@ -80,12 +79,14 @@ export function RecordingPanel({ onRecordingComplete }: RecordingPanelProps) {
           <>
             <button
               onClick={stopRecording}
-              className="flex items-center gap-2 rounded-lg bg-gray-700 px-4 py-2 text-white hover:bg-gray-800"
+              className="flex items-center gap-1.5 rounded-button bg-text-primary px-4 py-1.5 text-xs font-medium text-white hover:opacity-90"
             >
-              <Square size={18} />
+              <Square size={14} />
               停止
             </button>
-            <span className="text-red-500 font-mono font-bold">● {formatDuration(duration)}</span>
+            <span className="font-mono text-xs font-semibold text-brand">
+              ● {formatDuration(duration)}
+            </span>
           </>
         )}
 
@@ -93,26 +94,24 @@ export function RecordingPanel({ onRecordingComplete }: RecordingPanelProps) {
           <div className="flex items-center gap-2">
             <button
               onClick={handleUse}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+              className="rounded-button bg-text-primary px-4 py-1.5 text-xs font-medium text-white hover:opacity-90"
             >
               この録音を使う
             </button>
             <button
               onClick={reset}
-              className="flex items-center gap-1 rounded-lg border px-3 py-2 text-sm hover:bg-gray-50"
+              className="flex items-center gap-1 rounded-button border border-border px-3 py-1.5 text-xs text-text-primary hover:bg-surface"
             >
-              <RotateCcw size={14} />
+              <RotateCcw size={12} />
               やり直す
             </button>
           </div>
         )}
       </div>
 
-      {/* Playback */}
       {audioUrl && <audio controls src={audioUrl} className="w-full" />}
 
-      {/* Error */}
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-xs text-error">{error}</p>}
     </div>
   );
 }

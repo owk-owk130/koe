@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { LogOut, Upload } from "lucide-react";
+import { LogOut, Plus, Upload } from "lucide-react";
 import { createApiClient } from "@koe/shared";
 import { useAuth } from "../hooks/useAuth";
 import { useJobs } from "../hooks/useJobs";
@@ -10,10 +10,11 @@ import { JobDetail } from "./JobDetail";
 const API_URL = "http://localhost:8787";
 
 export function Dashboard() {
-  const { user, token, logout } = useAuth();
+  const { token, logout } = useAuth();
   const { jobs, refresh } = useJobs();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [showRecording, setShowRecording] = useState(false);
 
   const api = createApiClient(API_URL);
 
@@ -25,6 +26,7 @@ export function Dashboard() {
         const file = new File([blob], `recording-${Date.now()}.webm`, { type: "audio/webm" });
         const result = await api.createJob(token, file);
         setSelectedJobId(result.id);
+        setShowRecording(false);
         refresh();
       } catch (e) {
         console.error("Upload failed:", e);
@@ -55,54 +57,46 @@ export function Dashboard() {
   }, [token, api, refresh]);
 
   if (selectedJobId) {
-    return (
-      <div className="p-6">
-        <JobDetail jobId={selectedJobId} onBack={() => setSelectedJobId(null)} />
-      </div>
-    );
+    return <JobDetail jobId={selectedJobId} onBack={() => setSelectedJobId(null)} />;
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
+    <div className="space-y-4 p-5">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">koe</h1>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-600">{user?.email}</span>
+        <h1 className="text-xl font-semibold text-text-primary">ジョブ一覧</h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowRecording(!showRecording)}
+            className="flex items-center gap-1.5 rounded-button bg-text-primary px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+          >
+            <Plus size={12} />
+            新規ジョブ
+          </button>
+          <button
+            onClick={handleFileImport}
+            disabled={uploading}
+            className="flex items-center gap-1.5 rounded-button border border-border px-3 py-1.5 text-xs text-text-primary hover:bg-surface disabled:opacity-50"
+          >
+            <Upload size={12} />
+            ファイル
+          </button>
           <button
             onClick={logout}
-            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
+            className="flex items-center gap-1 rounded-button px-2 py-1.5 text-xs text-text-secondary hover:bg-surface"
           >
-            <LogOut size={14} />
-            ログアウト
+            <LogOut size={12} />
           </button>
         </div>
       </div>
 
-      {/* Recording */}
-      <section>
-        <h2 className="mb-3 font-semibold">録音</h2>
-        <RecordingPanel onRecordingComplete={handleRecordingComplete} />
-      </section>
+      {showRecording && (
+        <div className="rounded-card bg-white p-4 shadow-card">
+          <RecordingPanel onRecordingComplete={handleRecordingComplete} />
+          {uploading && <p className="mt-2 text-[11px] text-text-secondary">アップロード中...</p>}
+        </div>
+      )}
 
-      {/* File import */}
-      <section>
-        <button
-          onClick={handleFileImport}
-          disabled={uploading}
-          className="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
-        >
-          <Upload size={16} />
-          ファイルをインポート
-        </button>
-        {uploading && <p className="mt-1 text-xs text-gray-500">アップロード中...</p>}
-      </section>
-
-      {/* Job list */}
-      <section>
-        <h2 className="mb-3 font-semibold">ジョブ一覧</h2>
-        <JobList jobs={jobs} onSelect={setSelectedJobId} />
-      </section>
+      <JobList jobs={jobs} onSelect={setSelectedJobId} />
     </div>
   );
 }

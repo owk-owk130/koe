@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ExternalLink, Mic } from "lucide-react";
 import { createApiClient, type DeviceCodeResponse } from "@koe/shared";
 import { useAuth } from "../hooks/useAuth";
 
@@ -68,60 +69,70 @@ export function AuthScreen() {
   }, [deviceCode]);
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-8">
-      <div className="w-full max-w-md space-y-6 text-center">
-        <h1 className="text-3xl font-bold">koe</h1>
-        <p className="text-gray-600">音声文字起こし + トピック分割</p>
-
-        {flowState === "idle" && (
-          <button
-            onClick={startFlow}
-            className="rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700"
-          >
-            Google でログイン
-          </button>
-        )}
-
-        {flowState === "polling" && deviceCode && (
-          <div className="space-y-4">
-            <p className="text-sm text-gray-600">以下のコードを入力してください:</p>
-            <div className="flex items-center justify-center gap-2">
-              <code className="rounded bg-gray-100 px-4 py-2 text-2xl font-mono font-bold tracking-wider">
-                {deviceCode.user_code}
-              </code>
-              <button
-                onClick={copyCode}
-                className="rounded border px-3 py-2 text-sm hover:bg-gray-50"
-              >
-                {copied ? "Copied!" : "Copy"}
-              </button>
-            </div>
-            <button
-              onClick={openVerification}
-              className="rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700"
-            >
-              ブラウザで認証ページを開く
-            </button>
-            <p className="text-sm text-gray-500">認証が完了するまでお待ちください...</p>
-            <div className="flex justify-center">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-            </div>
+    <div className="flex flex-1 items-center justify-center p-8">
+      <div className="w-full max-w-[360px] rounded-card bg-white p-8 shadow-card">
+        <div className="flex flex-col items-center gap-5">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-light">
+            <Mic size={22} className="text-brand" />
           </div>
-        )}
+          <h1 className="text-2xl font-semibold tracking-tight text-text-primary">koe</h1>
+          <p className="text-[13px] text-text-secondary">
+            音声を文字起こしし、トピックに分割します
+          </p>
 
-        {flowState === "success" && <p className="text-green-600 font-medium">ログイン成功！</p>}
+          <div className="h-px w-full bg-surface" />
 
-        {flowState === "error" && (
-          <div className="space-y-4">
-            <p className="text-red-600">{error}</p>
+          {flowState === "idle" && (
             <button
               onClick={startFlow}
-              className="rounded-lg bg-blue-600 px-6 py-3 text-white hover:bg-blue-700"
+              className="w-full rounded-button bg-text-primary py-2.5 text-[13px] font-medium text-white hover:opacity-90"
             >
-              やり直す
+              Google でログイン
             </button>
-          </div>
-        )}
+          )}
+
+          {flowState === "polling" && deviceCode && (
+            <div className="flex w-full flex-col items-center gap-4">
+              <p className="text-xs text-text-secondary">ブラウザでコードを入力してください</p>
+              <button
+                onClick={copyCode}
+                className="font-mono text-[28px] font-medium tracking-wider text-text-primary hover:opacity-70"
+              >
+                {deviceCode.user_code}
+              </button>
+              <p className="text-[11px] text-text-secondary">
+                {copied ? "コピーしました" : "クリックでコピー"}
+              </p>
+              <button
+                onClick={openVerification}
+                className="flex w-full items-center justify-center gap-2 rounded-button bg-text-primary py-2.5 text-[13px] font-medium text-white hover:opacity-90"
+              >
+                <ExternalLink size={14} />
+                ブラウザで認証ページを開く
+              </button>
+              <div className="flex items-center gap-2 text-xs text-text-secondary">
+                <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+                認証待ち...
+              </div>
+            </div>
+          )}
+
+          {flowState === "success" && (
+            <p className="text-sm font-medium text-success">ログイン成功！</p>
+          )}
+
+          {flowState === "error" && (
+            <div className="flex w-full flex-col items-center gap-3">
+              <p className="text-xs text-error">{error}</p>
+              <button
+                onClick={startFlow}
+                className="w-full rounded-button bg-text-primary py-2.5 text-[13px] font-medium text-white hover:opacity-90"
+              >
+                やり直す
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

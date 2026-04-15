@@ -48,59 +48,83 @@ export function QuickTranscribe() {
   }, [api]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="mb-3 font-semibold">録音して文字起こし</h2>
-        <RecordingPanel onRecordingComplete={transcribeBlob} />
-      </div>
+    <div className="flex gap-5 p-5">
+      {/* Left column - Input */}
+      <div className="flex w-1/2 flex-col gap-4">
+        <h2 className="text-[15px] font-semibold text-text-primary">録音して文字起こし</h2>
+        <div className="rounded-card bg-white p-4 shadow-card">
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-light">
+              <Upload size={20} className="text-brand" />
+            </div>
+            <p className="text-xs text-text-secondary">マイクで録音、またはファイルを選択</p>
+            <RecordingPanel onRecordingComplete={transcribeBlob} />
+          </div>
+        </div>
 
-      <div>
         <button
           onClick={transcribeFile}
           disabled={loading}
-          className="flex items-center gap-2 rounded-lg border px-4 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+          className="flex items-center gap-1.5 self-start rounded-button border border-border px-3 py-1.5 text-xs text-text-primary hover:bg-surface disabled:opacity-50"
         >
-          <Upload size={16} />
+          <Upload size={12} />
           ファイルから文字起こし
         </button>
       </div>
 
-      {loading && (
-        <div className="flex items-center gap-2 text-sm text-gray-500">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-          文字起こし中...
-        </div>
-      )}
-
-      {error && <p className="text-sm text-red-600">{error}</p>}
-
-      {result && (
-        <div className="space-y-4">
-          <div className="rounded-lg border bg-white p-4 shadow-sm">
-            <h3 className="font-semibold">トランスクリプト</h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm">{result.transcript.text}</p>
+      {/* Right column - Result */}
+      <div className="flex w-1/2 flex-col gap-3.5">
+        {loading && (
+          <div className="flex items-center gap-2 text-xs text-text-secondary">
+            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+            文字起こし中...
           </div>
+        )}
 
-          {result.topics.length > 0 && (
-            <div>
-              <h3 className="mb-2 font-semibold">トピック</h3>
-              <div className="space-y-3">
-                {result.topics.map((topic, i) => (
-                  <div key={i} className="rounded-lg border bg-white p-4 shadow-sm">
-                    <div className="flex items-start justify-between">
-                      <h4 className="font-medium">{topic.title}</h4>
-                      <span className="text-xs text-gray-500">
-                        {formatDuration(topic.start_sec)} - {formatDuration(topic.end_sec)}
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm text-gray-600">{topic.summary}</p>
-                  </div>
-                ))}
-              </div>
+        {error && <p className="text-xs text-error">{error}</p>}
+
+        {result && (
+          <>
+            <h2 className="text-[15px] font-semibold text-text-primary">トランスクリプト</h2>
+            <div className="rounded-card bg-white p-4 shadow-card">
+              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-text-primary">
+                {result.transcript.text}
+              </p>
             </div>
-          )}
-        </div>
-      )}
+
+            {result.topics.length > 0 && (
+              <>
+                <h2 className="text-[15px] font-semibold text-text-primary">トピック</h2>
+                <div className="space-y-2.5">
+                  {result.topics.map((topic, i) => (
+                    <div key={i} className="rounded-card bg-white p-3.5 shadow-card">
+                      <div className="flex items-start justify-between">
+                        <h4 className="text-[13px] font-semibold text-text-primary">
+                          {topic.title}
+                        </h4>
+                        <span className="font-mono text-[11px] text-text-secondary">
+                          {formatDuration(topic.start_sec)} - {formatDuration(topic.end_sec)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                        {topic.summary}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {!loading && !error && !result && (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-xs text-text-secondary">
+              録音またはファイルを選択して文字起こしを開始
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
