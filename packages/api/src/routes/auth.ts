@@ -1,29 +1,32 @@
 import { Hono } from "hono";
-import type { Env } from "~/types";
+import { z } from "zod";
 import { AppError } from "~/lib/errors";
+import { validate } from "~/lib/validation";
+import { createUser, findUserByGoogleId } from "~/repositories/user-repository";
 import {
-  startDeviceFlow,
-  exchangeDeviceCode,
   decodeGoogleIdToken,
+  exchangeDeviceCode,
   signToken,
+  startDeviceFlow,
 } from "~/services/auth-service";
-import { findUserByGoogleId, createUser } from "~/repositories/user-repository";
+import type { Env } from "~/types";
+
+const tokenSchema = z.object({
+  device_code: z.string().min(1),
+});
 
 const auth = new Hono<Env>()
   .get("/device", async (c) => {
     const result = await startDeviceFlow(c.env.GOOGLE_CLIENT_ID);
     return c.json(result);
   })
-  .post("/token", async (c) => {
-    const body = await c.req.json<{ device_code?: string }>();
-    if (!body.device_code) {
-      throw new AppError(400, "BAD_REQUEST", "device_code is required");
-    }
+  .post("/token", validate("json", tokenSchema), async (c) => {
+    const { device_code } = c.req.valid("json");
 
     const result = await exchangeDeviceCode(
       c.env.GOOGLE_CLIENT_ID,
       c.env.GOOGLE_CLIENT_SECRET,
-      body.device_code,
+      device_code,
     );
 
     if (result === "pending") {
