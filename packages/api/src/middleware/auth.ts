@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono";
-import type { Env } from "~/types";
-import { verifyToken } from "~/services/auth-service";
 import { findUserById } from "~/repositories/user-repository";
+import { verifyToken } from "~/services/auth-service";
+import type { Env } from "~/types";
 
 const extractToken = (header: string | undefined): string | null => {
   if (!header?.startsWith("Bearer ")) return null;
@@ -20,7 +20,11 @@ export const requireAuth: () => MiddlewareHandler<Env> = () => async (c, next) =
     if (!user) {
       return c.json({ error: { code: "UNAUTHORIZED", message: "User not found" } }, 401);
     }
-    c.set("user", { id: user.id, email: user.email, name: user.name ?? undefined });
+    c.set("user", {
+      id: user.id,
+      email: user.email,
+      name: user.name ?? undefined,
+    });
   } catch {
     return c.json({ error: { code: "UNAUTHORIZED", message: "Invalid token" } }, 401);
   }
@@ -39,7 +43,11 @@ export const optionalAuth: () => MiddlewareHandler<Env> = () => async (c, next) 
     const payload = await verifyToken(token, c.env.JWT_SECRET);
     const user = await findUserById(c.env.DB, payload.sub);
     if (user) {
-      c.set("user", { id: user.id, email: user.email, name: user.name ?? undefined });
+      c.set("user", {
+        id: user.id,
+        email: user.email,
+        name: user.name ?? undefined,
+      });
     }
   } catch {
     return c.json({ error: { code: "UNAUTHORIZED", message: "Invalid token" } }, 401);

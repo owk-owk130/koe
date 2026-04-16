@@ -1,6 +1,7 @@
 import { Hono } from "hono";
-import type { Env } from "~/types";
+import { z } from "zod";
 import { AppError } from "~/lib/errors";
+import { validate } from "~/lib/validation";
 import { requireAuth } from "~/middleware/auth";
 import {
   createJob,
@@ -8,17 +9,23 @@ import {
   findTopicsByJob,
   listJobsByUser,
 } from "~/repositories/job-repository";
-import { uploadAudio } from "~/services/r2-storage";
 import { enqueueJob } from "~/services/container-service";
+import { uploadAudio } from "~/services/r2-storage";
+import type { Env } from "~/types";
+
+const audioFormSchema = z.object({
+  audio: z.instanceof(File),
+});
+
+const listQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).catch(20),
+  offset: z.coerce.number().int().min(0).catch(0),
+});
 
 const jobs = new Hono<Env>()
   .use("/*", requireAuth())
-  .post("/", async (c) => {
-    const body = await c.req.parseBody();
-    const file = body.audio;
-    if (!(file instanceof File)) {
-      throw new AppError(400, "BAD_REQUEST", "audio file is required");
-    }
+  .post("/", validate("form", audioFormSchema), async (c) => {
+    const { audio: file } = c.req.valid("form");
 
     const user = c.get("user");
     if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
@@ -59,13 +66,10 @@ const jobs = new Hono<Env>()
       201,
     );
   })
-  .get("/", async (c) => {
+  .get("/", validate("query", listQuerySchema), async (c) => {
     const user = c.get("user");
     if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    const rawLimit = parseInt(c.req.query("limit") ?? "20", 10);
-    const rawOffset = parseInt(c.req.query("offset") ?? "0", 10);
-    const limit = Math.min(Number.isNaN(rawLimit) || rawLimit < 1 ? 20 : rawLimit, 100);
-    const offset = Number.isNaN(rawOffset) || rawOffset < 0 ? 0 : rawOffset;
+    const { limit, offset } = c.req.valid("query");
 
     const jobList = await listJobsByUser(c.env.DB, user.id, { limit, offset });
 

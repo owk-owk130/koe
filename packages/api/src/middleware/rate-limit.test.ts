@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { rateLimit } from "./rate-limit";
 import type { Env } from "~/types";
+import { rateLimit } from "./rate-limit";
 
 describe("rateLimit", () => {
   it("allows requests within limit", async () => {

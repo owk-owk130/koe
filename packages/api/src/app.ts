@@ -3,9 +3,9 @@ import { cors } from "hono/cors";
 import { onError } from "./lib/errors";
 import authRoutes from "./routes/auth";
 import jobsRoutes from "./routes/jobs";
+import syncRoutes from "./routes/sync";
 import transcribeRoutes from "./routes/transcribe";
 import uploadsRoutes from "./routes/uploads";
-import syncRoutes from "./routes/sync";
 import type { Env } from "./types";
 
 const app = new Hono<Env>()

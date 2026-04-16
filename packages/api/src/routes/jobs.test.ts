@@ -1,13 +1,13 @@
 import { env } from "cloudflare:test";
 import { Hono } from "hono";
 import { beforeAll, describe, expect, it } from "vitest";
-import { setupD1 } from "~/test-helpers";
 import { onError } from "~/lib/errors";
-import { createUser } from "~/repositories/user-repository";
 import { createTopics } from "~/repositories/job-repository";
+import { createUser } from "~/repositories/user-repository";
 import { signToken } from "~/services/auth-service";
-import jobs from "./jobs";
+import { setupD1 } from "~/test-helpers";
 import type { Env } from "~/types";
+import jobs from "./jobs";
 
 const TEST_SECRET = "test-jwt-secret";
 const makeEnv = () => ({ ...env, JWT_SECRET: TEST_SECRET });
