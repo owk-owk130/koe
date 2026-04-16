@@ -123,6 +123,17 @@ ipcMain.handle(IPC.RECORDING_SAVE, async (_, buffer: ArrayBuffer, filename: stri
 
 // ---- File system IPC ----
 
+ipcMain.handle(IPC.FS_SAVE_AUDIO_FILE, async (_, buffer: ArrayBuffer, defaultName: string) => {
+  if (!mainWindow) return false;
+  const result = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: defaultName,
+    filters: [{ name: "Audio", extensions: ["webm"] }],
+  });
+  if (result.canceled || !result.filePath) return false;
+  await writeFile(result.filePath, Buffer.from(buffer));
+  return true;
+});
+
 ipcMain.handle(IPC.FS_SELECT_AUDIO_FILE, async () => {
   if (!mainWindow) return null;
   const result = await dialog.showOpenDialog(mainWindow, {

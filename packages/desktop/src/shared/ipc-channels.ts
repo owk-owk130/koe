@@ -19,6 +19,7 @@ export const IPC = {
 
   // File system
   FS_SELECT_AUDIO_FILE: "fs:select-audio-file",
+  FS_SAVE_AUDIO_FILE: "fs:save-audio-file",
   FS_READ_FILE: "fs:read-file",
   FS_GET_FILE_INFO: "fs:get-file-info",
 
@@ -137,6 +138,7 @@ export interface ElectronAPI {
 
   // File system
   selectAudioFile: () => Promise<FileInfo | null>;
+  saveAudioFile: (buffer: ArrayBuffer, defaultName: string) => Promise<boolean>;
   readFile: (path: string) => Promise<ArrayBuffer>;
   getFileInfo: (path: string) => Promise<FileInfo>;
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Mic, Square, RotateCcw, Settings } from "lucide-react";
+import { Mic, Square, RotateCcw, Settings, Download } from "lucide-react";
 import { formatDuration } from "@koe/shared";
 import { useRecording, type AudioSourceMode } from "~/renderer/hooks/useRecording";
 
@@ -45,6 +45,13 @@ export function RecordingPanel({ onRecordingComplete }: RecordingPanelProps) {
 
   const handleUse = () => {
     if (audioBlob) onRecordingComplete(audioBlob);
+  };
+
+  const handleDownload = async () => {
+    if (!audioBlob) return;
+    const buffer = await audioBlob.arrayBuffer();
+    const defaultName = `recording-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.webm`;
+    await window.electronAPI.saveAudioFile(buffer, defaultName);
   };
 
   return (
@@ -134,6 +141,13 @@ export function RecordingPanel({ onRecordingComplete }: RecordingPanelProps) {
               className="rounded-button bg-text-primary px-4 py-1.5 text-xs font-medium text-white hover:opacity-90"
             >
               この録音を使う
+            </button>
+            <button
+              onClick={handleDownload}
+              className="flex items-center gap-1 rounded-button border border-border px-3 py-1.5 text-xs text-text-primary hover:bg-surface"
+            >
+              <Download size={12} />
+              保存
             </button>
             <button
               onClick={reset}
