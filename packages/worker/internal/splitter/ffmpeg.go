@@ -152,11 +152,28 @@ func (s *FFmpegSplitter) Split(ctx context.Context, audioPath string) ([]Chunk, 
 	// 3. Compute split points
 	points := computeSplitPoints(duration, silences, s.maxDuration())
 
-	// 4. If no splits needed, return the original file as a single chunk
+	// 4. If no splits needed, convert to mp3 and return as a single chunk
 	if len(points) == 0 {
+		if filepath.Ext(audioPath) == ".mp3" {
+			return []Chunk{{
+				Index:    0,
+				Path:     audioPath,
+				StartSec: 0,
+				EndSec:   duration,
+			}}, nil
+		}
+		tmpFile, err := os.CreateTemp("", "koe-converted-*.mp3")
+		if err != nil {
+			return nil, fmt.Errorf("create temp file: %w", err)
+		}
+		tmpFile.Close()
+		if err := s.extractSegment(ctx, audioPath, tmpFile.Name(), 0, duration); err != nil {
+			os.Remove(tmpFile.Name())
+			return nil, fmt.Errorf("convert to mp3: %w", err)
+		}
 		return []Chunk{{
 			Index:    0,
-			Path:     audioPath,
+			Path:     tmpFile.Name(),
 			StartSec: 0,
 			EndSec:   duration,
 		}}, nil
@@ -180,13 +197,12 @@ func (s *FFmpegSplitter) Split(ctx context.Context, audioPath string) ([]Chunk, 
 	boundaries = append(boundaries, points...)
 	boundaries = append(boundaries, duration)
 
-	ext := filepath.Ext(audioPath)
 	chunks := make([]Chunk, 0, len(boundaries)-1)
 
 	for i := range len(boundaries) - 1 {
 		start := boundaries[i]
 		end := boundaries[i+1]
-		outPath := filepath.Join(tmpDir, fmt.Sprintf("chunk_%03d%s", i, ext))
+		outPath := filepath.Join(tmpDir, fmt.Sprintf("chunk_%03d.mp3", i))
 
 		err := s.extractSegment(ctx, audioPath, outPath, start, end-start)
 		if err != nil {
@@ -274,7 +290,6 @@ func (s *FFmpegSplitter) extractSegment(ctx context.Context, audioPath, outPath 
 		"-ss", fmt.Sprintf("%.3f", start),
 		"-i", audioPath,
 		"-t", fmt.Sprintf("%.3f", duration),
-		"-c", "copy",
 		"-v", "error",
 		outPath,
 	)

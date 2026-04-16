@@ -36,6 +36,9 @@ func TestClient_Transcribe(t *testing.T) {
 		if got := r.FormValue("response_format"); got != "verbose_json" {
 			t.Errorf("expected response_format 'verbose_json', got %q", got)
 		}
+		if got := r.FormValue("language"); got != "ja" {
+			t.Errorf("expected language 'ja', got %q", got)
+		}
 
 		file, _, err := r.FormFile("file")
 		if err != nil {
@@ -130,6 +133,7 @@ func TestClient_Transcribe_WorkersAI(t *testing.T) {
 		if got := r.Header.Get("cf-aig-authorization"); got != "Bearer test-key" {
 			t.Errorf("expected cf-aig-authorization 'Bearer test-key', got %q", got)
 		}
+
 		if ct := r.Header.Get("Content-Type"); ct != "audio/mpeg" {
 			t.Errorf("expected Content-Type 'audio/mpeg', got %q", ct)
 		}
