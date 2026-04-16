@@ -6,6 +6,7 @@ dist/
 # Electron
 out/
 release/
+packages/desktop/build/ffmpeg/
 
 # Go
 /packages/worker/bin/

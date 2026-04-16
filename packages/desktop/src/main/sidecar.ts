@@ -19,9 +19,7 @@ function getSidecarBinaryPath(): string {
     // dev: use `go run` via the worker package
     return "go";
   }
-  const platform = process.platform;
-  const arch = process.arch === "arm64" ? "arm64" : "amd64";
-  return join(process.resourcesPath, "sidecar", `koe-sidecar-${platform}-${arch}`);
+  return join(process.resourcesPath, "sidecar", "koe-sidecar");
 }
 
 function getSidecarArgs(): string[] {
