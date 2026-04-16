@@ -14,9 +14,13 @@ function setState(state: SidecarState): void {
   onStateChange?.(state);
 }
 
+function getDevWorkerDir(): string {
+  // app.getAppPath() returns packages/desktop/ regardless of build output location
+  return join(app.getAppPath(), "../worker");
+}
+
 function getSidecarBinaryPath(): string {
   if (is.dev) {
-    // dev: use `go run` via the worker package
     return "go";
   }
   return join(process.resourcesPath, "sidecar", "koe-sidecar");
@@ -24,11 +28,17 @@ function getSidecarBinaryPath(): string {
 
 function getSidecarArgs(): string[] {
   if (is.dev) {
-    // dev: go run ./cmd/sidecar
-    const workerDir = join(__dirname, "../../../../worker");
-    return ["run", join(workerDir, "cmd", "sidecar")];
+    return ["run", "./cmd/sidecar"];
   }
   return [];
+}
+
+function getSidecarCwd(): string | undefined {
+  if (is.dev) {
+    // go run needs cwd inside the Go module to find go.mod
+    return getDevWorkerDir();
+  }
+  return undefined;
 }
 
 function getFFmpegPaths(): { ffmpegPath?: string; ffprobePath?: string } {
@@ -68,12 +78,19 @@ export async function startSidecar(): Promise<void> {
   const args = getSidecarArgs();
 
   try {
+    const cwd = getSidecarCwd();
     const proc = spawn(binaryPath, args, {
       stdio: ["pipe", "pipe", "pipe"],
+      cwd,
       env: is.dev ? { ...process.env } : undefined,
     });
 
     sidecarProcess = proc;
+
+    // Log stderr early so errors during startup are visible
+    proc.stderr?.on("data", (data: Buffer) => {
+      console.log(`[sidecar] ${data.toString().trim()}`);
+    });
 
     // Write config JSON to stdin (keep stdin open for lifecycle monitoring)
     proc.stdin!.write(JSON.stringify(config) + "\n");
@@ -92,11 +109,6 @@ export async function startSidecar(): Promise<void> {
       if (currentState.status === "ready") {
         setState({ status: "error", error: `Sidecar exited unexpectedly (code: ${code})` });
       }
-    });
-
-    // Log stderr
-    proc.stderr?.on("data", (data: Buffer) => {
-      console.log(`[sidecar] ${data.toString().trim()}`);
     });
   } catch (err) {
     sidecarProcess?.kill();
