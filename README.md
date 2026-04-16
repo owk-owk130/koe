@@ -25,7 +25,7 @@ Workers Containers (Go)
 ```
 packages/
 ├── api/       # Cloudflare Workers + Hono (TypeScript)
-├── worker/    # Go - 音声処理 (server / cli / mcp)
+├── worker/    # Go - 音声処理 (server / sidecar / cli / mcp)
 ├── shared/    # 共有ユーティリティ (format / auth / API client)
 └── desktop/   # Electron デスクトップアプリ
 ```

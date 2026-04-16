@@ -4,17 +4,22 @@
 
 ## Architecture
 
-### 全体構成（フル Cloudflare）
+### 全体構成（ハイブリッド）
 
 ```
-CLI / MCP Client
-    │
-    ▼
-Workers (Hono/TS) ── API / 認証
-    │                   ├── R2 (音声ファイル + テキスト結果)
-    │                   └── D1 (ジョブ/チャンク/トピックのメタ情報)
-    ▼ DurableObject (KoeProcessor) ── alarm パターンで非同期ジョブ処理
-Workers Containers (Go HTTP :8080)
+Desktop App (Electron + React)
+    ├── ローカル処理パス（認証不要）
+    │     main process ── Go sidecar (cmd/sidecar)
+    │                       ├── ffmpeg 音声分割
+    │                       ├── Whisper (OpenAI互換)
+    │                       └── Gemini トピック分割
+    └── サーバー同期パス（認証必要、optional）
+          ▼
+Workers (Hono/TS) ── API / 認証 / 同期
+    │                   ├── R2 (テキスト結果)
+    │                   └── D1 (ジョブ/トピックのメタ情報)
+    ▼ DurableObject (KoeProcessor) ── alarm パターンで非同期ジョブ処理（Web版用）
+Workers Containers (Go HTTP :8080) ── Web版用
     ├── ffmpeg 音声分割
     ├── Whisper (Workers AI / OpenAI互換)
     └── LLM トピック分割 (Gemini Flash-Lite)
@@ -25,7 +30,7 @@ Workers Containers (Go HTTP :8080)
 ```
 packages/
 ├── api/       # Workers + Hono (TS) - API / 認証
-├── worker/    # Go - 音声処理 (server / cli / mcp)
+├── worker/    # Go - 音声処理 (server / sidecar / cli / mcp)
 ├── shared/    # 共有ユーティリティ (format / auth / API client)
 └── desktop/   # Electron デスクトップアプリ
 ```
@@ -35,7 +40,7 @@ packages/
 | レイヤー     | 技術                                                                             |
 | ------------ | -------------------------------------------------------------------------------- |
 | API          | Cloudflare Workers + Hono (TypeScript)                                           |
-| 音声処理     | Go (Workers Containers / ローカル CLI / MCP)                                     |
+| 音声処理     | Go (ローカル sidecar / Workers Containers / CLI / MCP)                            |
 | 文字起こし   | Workers AI Whisper (@cf/openai/whisper-large-v3-turbo)、OpenAI互換で差し替え可能 |
 | トピック分割 | Gemini Flash-Lite（デフォルト）、interface で差し替え可能                        |
 | DB           | Cloudflare D1                                                                    |
@@ -50,6 +55,7 @@ packages/
 POST /api/v1/transcribe        # 音声→テキスト、保存しない（optionalAuth）
 
 # 認証あり（ステートフル）
+POST /api/v1/sync              # ローカル処理結果をサーバーに同期（Desktop→Cloud）
 POST /api/v1/jobs              # ジョブ作成（文字起こし+トピック分割+保存）→ DO alarm で非同期処理
 GET  /api/v1/jobs              # ジョブ一覧（自分のだけ）
 GET  /api/v1/jobs/:id          # ジョブ詳細
@@ -89,7 +95,7 @@ pending → processing → completed
 ### 設計方針
 
 - Whisper / LLM クライアントは interface で抽象化し、baseURL 差し替えで切り替え可能にする
-- Go のコアロジックは cmd/server, cmd/cli, cmd/mcp で共有
+- Go のコアロジックは cmd/server, cmd/sidecar, cmd/cli, cmd/mcp で共有
 - D1 にはメタ情報のみ、巨大テキストは R2 に JSON で保存
 - 長時間音声はチャンク分割（静音検出 + 時間上限）で対応
 - 大容量ファイルは R2 Multipart Upload で対応
