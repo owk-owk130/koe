@@ -69,7 +69,9 @@ export function useRecording(): UseRecordingReturn {
           });
           streamsRef.current = [stream];
         } else if (mode === "system") {
-          const src = sources[0];
+          // Prefer a screen source over a window source to avoid GPU conflicts
+          // that cause the captured window (e.g. Chrome) to go black
+          const src = sources.find((s) => s.display_id) ?? sources[0];
           if (!src) throw new Error("No screen source available");
           const sysStream = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -83,6 +85,7 @@ export function useRecording(): UseRecordingReturn {
                 chromeMediaSourceId: src.id,
                 maxWidth: 1,
                 maxHeight: 1,
+                maxFrameRate: 1,
               },
             },
           });
@@ -93,7 +96,7 @@ export function useRecording(): UseRecordingReturn {
           stream = new MediaStream(sysStream.getAudioTracks());
           streamsRef.current = [sysStream];
         } else {
-          const src = sources[0];
+          const src = sources.find((s) => s.display_id) ?? sources[0];
           if (!src) throw new Error("No screen source available");
 
           const sysStream = await navigator.mediaDevices.getUserMedia({
@@ -108,6 +111,7 @@ export function useRecording(): UseRecordingReturn {
                 chromeMediaSourceId: src.id,
                 maxWidth: 1,
                 maxHeight: 1,
+                maxFrameRate: 1,
               },
             },
           });
