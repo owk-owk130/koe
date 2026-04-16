@@ -116,6 +116,33 @@ func TestProcessHandler_PipelineError(t *testing.T) {
 	}
 }
 
+func TestExtFromContentType(t *testing.T) {
+	tests := []struct {
+		contentType string
+		want        string
+	}{
+		{"audio/wav", ".wav"},
+		{"audio/x-wav", ".wav"},
+		{"audio/ogg", ".ogg"},
+		{"audio/flac", ".flac"},
+		{"audio/mp4", ".m4a"},
+		{"audio/m4a", ".m4a"},
+		{"audio/webm", ".webm"},
+		{"audio/mpeg", ".mp3"},
+		{"", ".mp3"},
+		{"application/octet-stream", ".mp3"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.contentType, func(t *testing.T) {
+			got := extFromContentType(tt.contentType)
+			if got != tt.want {
+				t.Errorf("extFromContentType(%q) = %q, want %q", tt.contentType, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProcessHandler_MethodNotAllowed(t *testing.T) {
 	h := &Handler{Runner: &mockRunner{}}
 	srv := httptest.NewServer(h.Mux())

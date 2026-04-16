@@ -8,8 +8,6 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/pipeline"
-	"github.com/owk-owk130/koe/packages/worker/internal/topic"
-	"github.com/owk-owk130/koe/packages/worker/internal/whisper"
 )
 
 // Runner abstracts pipeline execution for testability.
@@ -21,13 +19,6 @@ type Runner interface {
 type Handler struct {
 	TranscribePipeline Runner
 	FullPipeline       Runner
-}
-
-// NoopAnalyzer is an Analyzer that returns no topics (for transcribe-only mode).
-type NoopAnalyzer struct{}
-
-func (NoopAnalyzer) Analyze(_ context.Context, _ string, _ []whisper.Segment) (*topic.AnalysisResult, error) {
-	return &topic.AnalysisResult{}, nil
 }
 
 func extractAudioPath(req mcp.CallToolRequest) (string, error) {
