@@ -1,9 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
-import type { Bindings } from "./types";
-import { updateJobStatus } from "./repositories/job-repository";
 import { createChunks } from "./repositories/chunk-repository";
-import { createTopics } from "./repositories/job-repository";
+import { createTopics, updateJobStatus } from "./repositories/job-repository";
 import { uploadJSON } from "./services/r2-storage";
+import type { Bindings } from "./types";
 
 export type JobPayload = {
   jobId: string;

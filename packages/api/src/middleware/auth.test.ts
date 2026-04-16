@@ -1,11 +1,11 @@
-import { Hono } from "hono";
 import { env } from "cloudflare:test";
+import { Hono } from "hono";
 import { beforeAll, describe, expect, it } from "vitest";
-import { setupD1 } from "~/test-helpers";
-import { signToken } from "~/services/auth-service";
 import { createUser } from "~/repositories/user-repository";
-import { requireAuth, optionalAuth } from "./auth";
+import { signToken } from "~/services/auth-service";
+import { setupD1 } from "~/test-helpers";
 import type { Env } from "~/types";
+import { optionalAuth, requireAuth } from "./auth";
 
 const TEST_SECRET = "test-jwt-secret";
 

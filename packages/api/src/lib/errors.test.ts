@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
-import { AppError, onError } from "./errors";
 import type { Env } from "~/types";
+import { AppError, onError } from "./errors";
 
 describe("AppError", () => {
   const app = new Hono<Env>();

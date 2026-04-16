@@ -1,10 +1,10 @@
 import { env } from "cloudflare:test";
 import { Hono } from "hono";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { setupD1 } from "~/test-helpers";
 import { onError } from "~/lib/errors";
-import auth from "./auth";
+import { setupD1 } from "~/test-helpers";
 import type { Env } from "~/types";
+import auth from "./auth";
 
 const TEST_SECRET = "test-jwt-secret";
 const makeEnv = () => ({
@@ -26,7 +26,11 @@ describe("POST /auth/token", () => {
   it("returns 400 without device_code", async () => {
     const res = await app.request(
       "/auth/token",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
       makeEnv(),
     );
     expect(res.status).toBe(400);
@@ -36,11 +40,11 @@ describe("POST /auth/token", () => {
 
   it("returns 428 when Google returns authorization_pending", async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi
-      .fn()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ error: "authorization_pending" }), { status: 403 }),
-      );
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ error: "authorization_pending" }), {
+        status: 403,
+      }),
+    );
 
     try {
       const res = await app.request(
@@ -67,7 +71,11 @@ describe("POST /auth/token", () => {
       .replace(/\//g, "_")
       .replace(/=+$/, "");
     const payload = btoa(
-      JSON.stringify({ sub: "google-new-user", email: "new@gmail.com", name: "New User" }),
+      JSON.stringify({
+        sub: "google-new-user",
+        email: "new@gmail.com",
+        name: "New User",
+      }),
     )
       .replace(/\+/g, "-")
       .replace(/\//g, "_")

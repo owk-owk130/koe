@@ -1,4 +1,4 @@
-import { sign, verify, decode } from "hono/jwt";
+import { decode, sign, verify } from "hono/jwt";
 
 export type DeviceFlowResponse = {
   device_code: string;
