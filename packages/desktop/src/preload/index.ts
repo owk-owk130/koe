@@ -27,6 +27,8 @@ const electronAPI: ElectronAPI = {
 
   // File system
   selectAudioFile: () => ipcRenderer.invoke(IPC.FS_SELECT_AUDIO_FILE),
+  saveAudioFile: (buffer, defaultName) =>
+    ipcRenderer.invoke(IPC.FS_SAVE_AUDIO_FILE, buffer, defaultName),
   readFile: (path) => ipcRenderer.invoke(IPC.FS_READ_FILE, path),
   getFileInfo: (path) => ipcRenderer.invoke(IPC.FS_GET_FILE_INFO, path),
 
@@ -42,6 +44,26 @@ const electronAPI: ElectronAPI = {
 
   // Upload
   multipartUpload: (filePath, token) => ipcRenderer.invoke(IPC.UPLOAD_MULTIPART, filePath, token),
+
+  // Settings
+  getSettings: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
+  saveSettings: (settings) => ipcRenderer.invoke(IPC.SETTINGS_SAVE, settings),
+  getApiKeys: () => ipcRenderer.invoke(IPC.SETTINGS_GET_API_KEYS),
+  saveApiKeys: (keys) => ipcRenderer.invoke(IPC.SETTINGS_SAVE_API_KEYS, keys),
+  saveAll: (payload) => ipcRenderer.invoke(IPC.SETTINGS_SAVE_ALL, payload),
+  isConfigured: () => ipcRenderer.invoke(IPC.SETTINGS_IS_CONFIGURED),
+
+  // Sidecar
+  getSidecarStatus: () => ipcRenderer.invoke(IPC.SIDECAR_STATUS),
+  onSidecarStatusChanged: (callback) => {
+    const handler = (_: unknown, state: import("~/shared/ipc-channels").SidecarState) =>
+      callback(state);
+    ipcRenderer.on(IPC.SIDECAR_STATUS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC.SIDECAR_STATUS_CHANGED, handler);
+  },
+
+  // Local processing
+  processLocal: (audioFilePath) => ipcRenderer.invoke(IPC.LOCAL_PROCESS, audioFilePath),
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

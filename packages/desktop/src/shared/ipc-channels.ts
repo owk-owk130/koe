@@ -19,6 +19,7 @@ export const IPC = {
 
   // File system
   FS_SELECT_AUDIO_FILE: "fs:select-audio-file",
+  FS_SAVE_AUDIO_FILE: "fs:save-audio-file",
   FS_READ_FILE: "fs:read-file",
   FS_GET_FILE_INFO: "fs:get-file-info",
 
@@ -34,6 +35,21 @@ export const IPC = {
 
   // Upload (main process handles large file upload)
   UPLOAD_MULTIPART: "upload:multipart",
+
+  // Settings
+  SETTINGS_GET: "settings:get",
+  SETTINGS_SAVE: "settings:save",
+  SETTINGS_GET_API_KEYS: "settings:get-api-keys",
+  SETTINGS_SAVE_API_KEYS: "settings:save-api-keys",
+  SETTINGS_SAVE_ALL: "settings:save-all",
+  SETTINGS_IS_CONFIGURED: "settings:is-configured",
+
+  // Sidecar
+  SIDECAR_STATUS: "sidecar:status",
+  SIDECAR_STATUS_CHANGED: "sidecar:status-changed",
+
+  // Local processing
+  LOCAL_PROCESS: "local:process",
 } as const;
 
 // ---- Payload types ----
@@ -62,6 +78,53 @@ export interface UploadResult {
   status: string;
 }
 
+export interface AppSettings {
+  whisperBaseUrl: string;
+  whisperModel: string;
+  geminiModel: string;
+}
+
+export interface ApiKeysInput {
+  whisperApiKey: string;
+  geminiApiKey?: string;
+}
+
+export interface ApiKeysOutput {
+  whisperApiKey: string | null;
+  geminiApiKey: string | null;
+}
+
+export interface SaveAllPayload {
+  settings: AppSettings;
+  apiKeys: ApiKeysInput;
+}
+
+export type SidecarStatus = "stopped" | "starting" | "ready" | "error";
+
+export interface SidecarState {
+  status: SidecarStatus;
+  port?: number;
+  error?: string;
+}
+
+export interface LocalProcessResult {
+  transcript: {
+    text: string;
+    segments: Array<{ text: string; start_sec: number; end_sec: number }>;
+  };
+  summary: string;
+  topics: Array<{
+    index: number;
+    title: string;
+    summary: string;
+    detail: string;
+    start_sec: number;
+    end_sec: number;
+    transcript: string;
+  }>;
+  chunks: Array<{ index: number; start_sec: number; end_sec: number; text: string }>;
+}
+
 // ---- ElectronAPI type (exposed via contextBridge) ----
 
 export interface ElectronAPI {
@@ -81,6 +144,7 @@ export interface ElectronAPI {
 
   // File system
   selectAudioFile: () => Promise<FileInfo | null>;
+  saveAudioFile: (buffer: ArrayBuffer, defaultName: string) => Promise<boolean>;
   readFile: (path: string) => Promise<ArrayBuffer>;
   getFileInfo: (path: string) => Promise<FileInfo>;
 
@@ -96,4 +160,19 @@ export interface ElectronAPI {
 
   // Upload
   multipartUpload: (filePath: string, token: string) => Promise<UploadResult>;
+
+  // Settings
+  getSettings: () => Promise<AppSettings>;
+  saveSettings: (settings: AppSettings) => Promise<void>;
+  getApiKeys: () => Promise<ApiKeysOutput>;
+  saveApiKeys: (keys: ApiKeysInput) => Promise<void>;
+  saveAll: (payload: SaveAllPayload) => Promise<void>;
+  isConfigured: () => Promise<boolean>;
+
+  // Sidecar
+  getSidecarStatus: () => Promise<SidecarState>;
+  onSidecarStatusChanged: (callback: (state: SidecarState) => void) => () => void;
+
+  // Local processing
+  processLocal: (audioFilePath: string) => Promise<LocalProcessResult>;
 }

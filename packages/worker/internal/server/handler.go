@@ -95,6 +95,8 @@ func extFromContentType(ct string) string {
 		return ".flac"
 	case "audio/mp4", "audio/m4a":
 		return ".m4a"
+	case "audio/webm":
+		return ".webm"
 	default:
 		return ".mp3"
 	}

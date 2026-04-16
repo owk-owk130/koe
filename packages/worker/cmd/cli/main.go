@@ -16,11 +16,11 @@ import (
 
 func main() {
 	var (
-		output     string
-		whisperURL string
-		whisperKey string
-		model      string
-		geminiKey  string
+		output      string
+		whisperURL  string
+		whisperKey  string
+		model       string
+		geminiKey   string
 		geminiModel string
 	)
 

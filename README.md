@@ -7,14 +7,19 @@ capture voice and shape it into structured thoughts.
 ## Architecture
 
 ```
-Desktop App (Electron + React) / CLI / MCP Client
-    │
-    ▼
-Workers (Hono/TS) ── API / 認証
-    │                   ├── R2 (音声 + 結果)
-    │                   └── D1 (メタ情報)
-    ▼ getContainer()
-Workers Containers (Go)
+Desktop App (Electron + React)
+    ├── ローカル処理パス
+    │     main process ── Go sidecar (cmd/sidecar)
+    │                       ├── ffmpeg 音声分割
+    │                       ├── Whisper 文字起こし
+    │                       └── Gemini トピック分割
+    └── サーバー同期パス（要認証、optional）
+          ▼
+Workers (Hono/TS) ── API / 認証 / 同期
+    │                   ├── R2 (テキスト結果)
+    │                   └── D1 (ジョブ/トピックのメタ情報)
+    ▼ DurableObject (KoeProcessor)
+Workers Containers (Go HTTP :8080) ── Web版用
     ├── ffmpeg 音声分割
     ├── Whisper (Workers AI)
     └── Gemini (トピック分割)
@@ -25,7 +30,7 @@ Workers Containers (Go)
 ```
 packages/
 ├── api/       # Cloudflare Workers + Hono (TypeScript)
-├── worker/    # Go - 音声処理 (server / cli / mcp)
+├── worker/    # Go - 音声処理 (server / sidecar / cli / mcp)
 ├── shared/    # 共有ユーティリティ (format / auth / API client)
 └── desktop/   # Electron デスクトップアプリ
 ```

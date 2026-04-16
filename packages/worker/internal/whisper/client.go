@@ -88,6 +88,7 @@ func (c *Client) transcribeOpenAI(ctx context.Context, audioPath string) (*Trans
 
 	w.WriteField("model", c.Model)
 	w.WriteField("response_format", "verbose_json")
+	w.WriteField("language", "ja")
 	w.Close()
 
 	url := c.BaseURL + "/v1/audio/transcriptions"

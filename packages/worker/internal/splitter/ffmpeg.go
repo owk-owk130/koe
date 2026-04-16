@@ -22,6 +22,10 @@ type FFmpegSplitter struct {
 	// SilenceMinDuration is the minimum silence duration in seconds.
 	// Defaults to 0.5.
 	SilenceMinDuration float64
+	// FFmpegPath is the path to the ffmpeg binary. Defaults to "ffmpeg" (system PATH).
+	FFmpegPath string
+	// FFprobePath is the path to the ffprobe binary. Defaults to "ffprobe" (system PATH).
+	FFprobePath string
 }
 
 type silence struct {
@@ -117,16 +121,30 @@ func (s *FFmpegSplitter) silenceMinDuration() float64 {
 	return 0.5
 }
 
+func (s *FFmpegSplitter) ffmpegPath() string {
+	if s.FFmpegPath != "" {
+		return s.FFmpegPath
+	}
+	return "ffmpeg"
+}
+
+func (s *FFmpegSplitter) ffprobePath() string {
+	if s.FFprobePath != "" {
+		return s.FFprobePath
+	}
+	return "ffprobe"
+}
+
 // Split implements the Splitter interface.
 func (s *FFmpegSplitter) Split(ctx context.Context, audioPath string) ([]Chunk, error) {
 	// 1. Get audio duration
-	duration, err := probeDuration(ctx, audioPath)
+	duration, err := s.probeDuration(ctx, audioPath)
 	if err != nil {
 		return nil, fmt.Errorf("probe duration: %w", err)
 	}
 
 	// 2. Detect silences
-	silences, err := detectSilences(ctx, audioPath, s.silenceThreshold(), s.silenceMinDuration())
+	silences, err := s.detectSilences(ctx, audioPath, s.silenceThreshold(), s.silenceMinDuration())
 	if err != nil {
 		return nil, fmt.Errorf("detect silences: %w", err)
 	}
@@ -134,11 +152,28 @@ func (s *FFmpegSplitter) Split(ctx context.Context, audioPath string) ([]Chunk, 
 	// 3. Compute split points
 	points := computeSplitPoints(duration, silences, s.maxDuration())
 
-	// 4. If no splits needed, return the original file as a single chunk
+	// 4. If no splits needed, convert to mp3 and return as a single chunk
 	if len(points) == 0 {
+		if filepath.Ext(audioPath) == ".mp3" {
+			return []Chunk{{
+				Index:    0,
+				Path:     audioPath,
+				StartSec: 0,
+				EndSec:   duration,
+			}}, nil
+		}
+		tmpFile, err := os.CreateTemp("", "koe-converted-*.mp3")
+		if err != nil {
+			return nil, fmt.Errorf("create temp file: %w", err)
+		}
+		tmpFile.Close()
+		if err := s.extractSegment(ctx, audioPath, tmpFile.Name(), 0, duration); err != nil {
+			os.Remove(tmpFile.Name())
+			return nil, fmt.Errorf("convert to mp3: %w", err)
+		}
 		return []Chunk{{
 			Index:    0,
-			Path:     audioPath,
+			Path:     tmpFile.Name(),
 			StartSec: 0,
 			EndSec:   duration,
 		}}, nil
@@ -162,15 +197,14 @@ func (s *FFmpegSplitter) Split(ctx context.Context, audioPath string) ([]Chunk, 
 	boundaries = append(boundaries, points...)
 	boundaries = append(boundaries, duration)
 
-	ext := filepath.Ext(audioPath)
 	chunks := make([]Chunk, 0, len(boundaries)-1)
 
 	for i := range len(boundaries) - 1 {
 		start := boundaries[i]
 		end := boundaries[i+1]
-		outPath := filepath.Join(tmpDir, fmt.Sprintf("chunk_%03d%s", i, ext))
+		outPath := filepath.Join(tmpDir, fmt.Sprintf("chunk_%03d.mp3", i))
 
-		err := extractSegment(ctx, audioPath, outPath, start, end-start)
+		err := s.extractSegment(ctx, audioPath, outPath, start, end-start)
 		if err != nil {
 			return nil, fmt.Errorf("extract chunk %d: %w", i, err)
 		}
@@ -187,8 +221,8 @@ func (s *FFmpegSplitter) Split(ctx context.Context, audioPath string) ([]Chunk, 
 	return chunks, nil
 }
 
-func probeDuration(ctx context.Context, audioPath string) (float64, error) {
-	cmd := exec.CommandContext(ctx, "ffprobe",
+func (s *FFmpegSplitter) probeDuration(ctx context.Context, audioPath string) (float64, error) {
+	cmd := exec.CommandContext(ctx, s.ffprobePath(),
 		"-v", "error",
 		"-show_entries", "format=duration",
 		"-of", "default=noprint_wrappers=1:nokey=1",
@@ -199,17 +233,17 @@ func probeDuration(ctx context.Context, audioPath string) (float64, error) {
 		return 0, fmt.Errorf("ffprobe: %w", err)
 	}
 
-	s := strings.TrimSpace(string(out))
-	if d, err := strconv.ParseFloat(s, 64); err == nil {
+	raw := strings.TrimSpace(string(out))
+	if d, err := strconv.ParseFloat(raw, 64); err == nil {
 		return d, nil
 	}
 
 	// Fallback: decode to get duration when container metadata lacks it (e.g. some WebM files)
-	return probeDurationByDecode(ctx, audioPath)
+	return s.probeDurationByDecode(ctx, audioPath)
 }
 
-func probeDurationByDecode(ctx context.Context, audioPath string) (float64, error) {
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+func (s *FFmpegSplitter) probeDurationByDecode(ctx context.Context, audioPath string) (float64, error) {
+	cmd := exec.CommandContext(ctx, s.ffmpegPath(),
 		"-i", audioPath,
 		"-f", "null",
 		"-v", "quiet",
@@ -235,9 +269,9 @@ func parseFfmpegTime(output string) (float64, error) {
 	return h*3600 + m*60 + s, nil
 }
 
-func detectSilences(ctx context.Context, audioPath string, threshold int, minDuration float64) ([]silence, error) {
+func (s *FFmpegSplitter) detectSilences(ctx context.Context, audioPath string, threshold int, minDuration float64) ([]silence, error) {
 	filter := fmt.Sprintf("silencedetect=noise=%ddB:d=%.1f", threshold, minDuration)
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+	cmd := exec.CommandContext(ctx, s.ffmpegPath(),
 		"-i", audioPath,
 		"-af", filter,
 		"-f", "null", "-",
@@ -250,13 +284,12 @@ func detectSilences(ctx context.Context, audioPath string, threshold int, minDur
 	return parseSilenceDetect(string(out)), nil
 }
 
-func extractSegment(ctx context.Context, audioPath, outPath string, start, duration float64) error {
-	cmd := exec.CommandContext(ctx, "ffmpeg",
+func (s *FFmpegSplitter) extractSegment(ctx context.Context, audioPath, outPath string, start, duration float64) error {
+	cmd := exec.CommandContext(ctx, s.ffmpegPath(),
 		"-y",
 		"-ss", fmt.Sprintf("%.3f", start),
 		"-i", audioPath,
 		"-t", fmt.Sprintf("%.3f", duration),
-		"-c", "copy",
 		"-v", "error",
 		outPath,
 	)

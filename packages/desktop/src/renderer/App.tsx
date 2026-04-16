@@ -10,6 +10,7 @@ import { Sidebar } from "./components/Sidebar";
 import { QuickTranscribe } from "./components/QuickTranscribe";
 import { JobDetail } from "./components/JobDetail";
 import { RecordingPanel } from "./components/RecordingPanel";
+import { SettingsPanel } from "./components/SettingsPanel";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,7 +18,7 @@ const queryClient = new QueryClient({
   },
 });
 
-type View = "transcribe" | "jobs";
+type View = "transcribe" | "jobs" | "settings";
 
 function JobsEmptyState() {
   return (
@@ -136,8 +137,10 @@ function AppContent() {
       />
 
       <main className="flex flex-1 flex-col overflow-auto">
-        {view === "transcribe" ? (
-          <QuickTranscribe />
+        {view === "settings" ? (
+          <SettingsPanel />
+        ) : view === "transcribe" ? (
+          <QuickTranscribe onNavigateSettings={() => setView("settings")} />
         ) : !isAuthenticated ? (
           <AuthScreen />
         ) : (

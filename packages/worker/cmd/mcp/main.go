@@ -45,7 +45,7 @@ func main() {
 	transcribePipeline := &pipeline.Pipeline{
 		Splitter:    &splitter.FFmpegSplitter{},
 		Transcriber: transcriber,
-		Analyzer:    mcphandler.NoopAnalyzer{},
+		Analyzer:    topic.NoopAnalyzer{},
 	}
 
 	h := &mcphandler.Handler{
