@@ -11,7 +11,7 @@ Desktop App (Electron + React)
     ├── ローカル処理パス
     │     main process ── Go sidecar (cmd/sidecar)
     │                       ├── ffmpeg 音声分割
-    │                       ├── Whisper (OpenAI互換)
+    │                       ├── Whisper 文字起こし
     │                       └── Gemini トピック分割
     └── サーバー同期パス（要認証、optional）
           ▼
@@ -21,7 +21,7 @@ Workers (Hono/TS) ── API / 認証 / 同期
     ▼ DurableObject (KoeProcessor) ── alarm パターンで非同期ジョブ処理（Web版用）
 Workers Containers (Go HTTP :8080) ── Web版用
     ├── ffmpeg 音声分割
-    ├── Whisper (Workers AI / OpenAI互換)
+    ├── Whisper (Workers AI)
     └── LLM トピック分割 (Gemini Flash-Lite)
 ```
 
