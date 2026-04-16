@@ -25,17 +25,26 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 			t.Errorf("expected no query params (API key should be in header), got %q", r.URL.RawQuery)
 		}
 
-		// Verify request body has contents and generationConfig
+		// Verify request body has system_instruction, contents, and generationConfig
 		body, _ := io.ReadAll(r.Body)
 		var req geminiRequest
 		if err := json.Unmarshal(body, &req); err != nil {
 			t.Fatalf("decode request: %v", err)
+		}
+		if req.SystemInstruction == nil || len(req.SystemInstruction.Parts) == 0 {
+			t.Fatal("expected non-empty system_instruction")
 		}
 		if len(req.Contents) == 0 {
 			t.Fatal("expected non-empty contents")
 		}
 		if req.GenerationConfig.ResponseMimeType != "application/json" {
 			t.Errorf("expected responseMimeType 'application/json', got %q", req.GenerationConfig.ResponseMimeType)
+		}
+		if req.GenerationConfig.ResponseSchema == nil {
+			t.Error("expected non-nil responseSchema")
+		}
+		if req.GenerationConfig.Temperature == nil || *req.GenerationConfig.Temperature != 0.2 {
+			t.Error("expected temperature 0.2")
 		}
 
 		// Respond with Gemini format containing JSON analysis result

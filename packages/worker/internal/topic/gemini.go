@@ -24,12 +24,15 @@ type GeminiAnalyzer struct {
 // Gemini API request/response types.
 
 type geminiRequest struct {
-	Contents         []geminiContent  `json:"contents"`
-	GenerationConfig generationConfig `json:"generationConfig"`
+	SystemInstruction *geminiContent   `json:"system_instruction,omitempty"`
+	Contents          []geminiContent  `json:"contents"`
+	GenerationConfig  generationConfig `json:"generationConfig"`
 }
 
 type generationConfig struct {
-	ResponseMimeType string `json:"responseMimeType"`
+	ResponseMimeType string         `json:"responseMimeType"`
+	ResponseSchema   map[string]any `json:"responseSchema,omitempty"`
+	Temperature      *float64       `json:"temperature,omitempty"`
 }
 
 type geminiContent struct {
@@ -62,50 +65,95 @@ func (g *GeminiAnalyzer) baseURL() string {
 	return defaultGeminiBaseURL
 }
 
-func buildPrompt(transcript string, segments []whisper.Segment) string {
+const analysisSystemInstruction = `あなたは音声会話の構造化分析器です。
+目的は、時系列セグメントを漏れなくトピックに分割し、各トピックの内容を具体的に要約することです。
+
+## 優先順位
+1. JSONスキーマ準拠
+2. トピック境界の正確さ
+3. 要約の具体性
+4. 不確実な箇所での過剰推測の回避
+
+## トピック分割ルール
+- 新しいトピックは、中心論点・意思決定対象・質問・作業フェーズが変わり、その変化が短い脱線ではなく持続するときだけ作る
+- 相づち、言い直し、笑い、短い雑談、短い補足、接続表現だけでは分割しない
+- 入力全体が1つの話題なら topics は1件にする
+
+## タイムスタンプルール
+- 時刻の根拠は segments のみ。start_sec/end_sec は採用した最初と最後の segment の時刻と一致させる
+- topics は segments を順番どおりに完全被覆する。欠落・重複・逆転は禁止
+- 最初のトピックの start_sec は先頭セグメントの start_sec、最後のトピックの end_sec は末尾セグメントの end_sec と一致させる
+
+## 要約ルール
+- summary と detail は自分の言葉で要約する。文字起こしテキストをそのままコピーしない
+- 文字起こしに誤字・誤認識があっても、前後の文脈から正しい意味を推測して正確な要約を書く
+- 「〜について話している」のような状況説明ではなく、話の具体的な中身を書く
+- 結論・決定事項・主張・事実・対立点・未解決事項・次のアクションを優先してまとめる
+- 固有名詞・製品名・技術用語はそのまま保持する
+- 誤認識の補正は行うが、固有名詞・数値・人名を自信なく断定しない
+- 話者が不明なら名前を作らず「参加者」「話者」などで表現する
+
+## transcript フィールド
+- transcript は該当する時間範囲のセグメントテキストを元の順で連結したもの（原文保持）
+- summary/detail と異なり、transcript では誤認識の補正を行わない
+
+## エッジケース
+- 有意味な発話がほぼ無い場合は summary にその旨を書き、topics は空配列にする
+- 入力全体が1つの話題なら topics は1件にする
+- 途中で切れた会話は、未完であることがわかる要約にする`
+
+func buildUserPrompt(segments []whisper.Segment) string {
 	segJSON, _ := json.Marshal(segments)
-	return fmt.Sprintf(`以下の音声文字起こしテキストを分析し、全体の要約とトピック分割を行ってください。
-
-## 重要なルール
-- summary と detail は自分の言葉で要約すること。文字起こしテキストをそのままコピーしない
-- 「〜について話している」「〜が語られる」のような状況説明ではなく、話の具体的な中身を書く
-- 誰が何を言ったか、どんな主張・意見・事実が出たかを含める
-- 読めばその場にいなくても会話の内容がわかるレベルの具体性が必要
-
-## 出力形式
-以下の構造のJSONオブジェクトで返してください:
-{
-  "summary": "音声全体の要約(2-3文。具体的な内容を含む)",
-  "topics": [
-    {
-      "index": 0,
-      "title": "トピックのタイトル(簡潔に)",
-      "summary": "トピックの要約(1-2文。具体的な中身を書く)",
-      "detail": "トピックの詳細な要約(内容を整理し自分の言葉でまとめる。発言の引用やトランスクリプトのコピーではなく、何が話されたかを段落で説明)",
-      "start_sec": 0.0,
-      "end_sec": 60.0,
-      "transcript": "そのトピックに該当する文字起こしテキスト"
-    }
-  ]
+	return fmt.Sprintf("以下のタイムスタンプ付きセグメントを分析し、全体の要約とトピック分割を行ってください。\n\n%s", segJSON)
 }
 
-## タイムスタンプ付きセグメント
-%s
-
-## 全文テキスト
-%s`, segJSON, transcript)
+func analysisResponseSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"summary": map[string]any{
+				"type":        "string",
+				"description": "音声全体の要約(2-3文。具体的な内容を含む)",
+			},
+			"topics": map[string]any{
+				"type": "array",
+				"items": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"index":      map[string]any{"type": "integer", "description": "0始まりの連番"},
+						"title":      map[string]any{"type": "string", "description": "トピックのタイトル(簡潔に)"},
+						"summary":    map[string]any{"type": "string", "description": "トピックの要約(1-2文。具体的な中身を書く)"},
+						"detail":     map[string]any{"type": "string", "description": "トピックの詳細な要約(内容を整理し自分の言葉でまとめる)"},
+						"start_sec":  map[string]any{"type": "number", "description": "開始時刻(秒)"},
+						"end_sec":    map[string]any{"type": "number", "description": "終了時刻(秒)"},
+						"transcript": map[string]any{"type": "string", "description": "該当セグメントのテキストを元の順で連結"},
+					},
+					"required":         []string{"index", "title", "summary", "detail", "start_sec", "end_sec", "transcript"},
+					"propertyOrdering": []string{"index", "title", "summary", "detail", "start_sec", "end_sec", "transcript"},
+				},
+			},
+		},
+		"required":         []string{"summary", "topics"},
+		"propertyOrdering": []string{"summary", "topics"},
+	}
 }
 
 // Analyze implements the Analyzer interface.
 func (g *GeminiAnalyzer) Analyze(ctx context.Context, transcript string, segments []whisper.Segment) (*AnalysisResult, error) {
-	prompt := buildPrompt(transcript, segments)
+	prompt := buildUserPrompt(segments)
+	temp := 0.2
 
 	reqBody := geminiRequest{
+		SystemInstruction: &geminiContent{
+			Parts: []geminiPart{{Text: analysisSystemInstruction}},
+		},
 		Contents: []geminiContent{{
 			Parts: []geminiPart{{Text: prompt}},
 		}},
 		GenerationConfig: generationConfig{
 			ResponseMimeType: "application/json",
+			ResponseSchema:   analysisResponseSchema(),
+			Temperature:      &temp,
 		},
 	}
 
