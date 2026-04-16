@@ -91,9 +91,9 @@ export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
       {/* Bottom - Result */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
         {loading && (
-          <div className="flex items-center gap-2 text-xs text-text-secondary">
-            <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand border-t-transparent" />
-            文字起こし中...
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white">
+            <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-brand border-t-transparent" />
+            <p className="text-[13px] font-medium text-text-primary">文字起こし中...</p>
           </div>
         )}
 
