@@ -34,6 +34,20 @@ export const IPC = {
 
   // Upload (main process handles large file upload)
   UPLOAD_MULTIPART: "upload:multipart",
+
+  // Settings
+  SETTINGS_GET: "settings:get",
+  SETTINGS_SAVE: "settings:save",
+  SETTINGS_GET_API_KEYS: "settings:get-api-keys",
+  SETTINGS_SAVE_API_KEYS: "settings:save-api-keys",
+  SETTINGS_IS_CONFIGURED: "settings:is-configured",
+
+  // Sidecar
+  SIDECAR_STATUS: "sidecar:status",
+  SIDECAR_STATUS_CHANGED: "sidecar:status-changed",
+
+  // Local processing
+  LOCAL_PROCESS: "local:process",
 } as const;
 
 // ---- Payload types ----
@@ -60,6 +74,48 @@ export interface FileInfo {
 export interface UploadResult {
   jobId: string;
   status: string;
+}
+
+export interface AppSettings {
+  whisperBaseUrl: string;
+  whisperModel: string;
+  geminiModel: string;
+}
+
+export interface ApiKeysInput {
+  whisperApiKey: string;
+  geminiApiKey?: string;
+}
+
+export interface ApiKeysOutput {
+  whisperApiKey: string | null;
+  geminiApiKey: string | null;
+}
+
+export type SidecarStatus = "stopped" | "starting" | "ready" | "error";
+
+export interface SidecarState {
+  status: SidecarStatus;
+  port?: number;
+  error?: string;
+}
+
+export interface LocalProcessResult {
+  transcript: {
+    text: string;
+    segments: Array<{ text: string; start_sec: number; end_sec: number }>;
+  };
+  summary: string;
+  topics: Array<{
+    index: number;
+    title: string;
+    summary: string;
+    detail: string;
+    start_sec: number;
+    end_sec: number;
+    transcript: string;
+  }>;
+  chunks: Array<{ index: number; start_sec: number; end_sec: number; text: string }>;
 }
 
 // ---- ElectronAPI type (exposed via contextBridge) ----
@@ -96,4 +152,18 @@ export interface ElectronAPI {
 
   // Upload
   multipartUpload: (filePath: string, token: string) => Promise<UploadResult>;
+
+  // Settings
+  getSettings: () => Promise<AppSettings>;
+  saveSettings: (settings: AppSettings) => Promise<void>;
+  getApiKeys: () => Promise<ApiKeysOutput>;
+  saveApiKeys: (keys: ApiKeysInput) => Promise<void>;
+  isConfigured: () => Promise<boolean>;
+
+  // Sidecar
+  getSidecarStatus: () => Promise<SidecarState>;
+  onSidecarStatusChanged: (callback: (state: SidecarState) => void) => () => void;
+
+  // Local processing
+  processLocal: (audioFilePath: string) => Promise<LocalProcessResult>;
 }

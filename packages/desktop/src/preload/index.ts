@@ -42,6 +42,25 @@ const electronAPI: ElectronAPI = {
 
   // Upload
   multipartUpload: (filePath, token) => ipcRenderer.invoke(IPC.UPLOAD_MULTIPART, filePath, token),
+
+  // Settings
+  getSettings: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
+  saveSettings: (settings) => ipcRenderer.invoke(IPC.SETTINGS_SAVE, settings),
+  getApiKeys: () => ipcRenderer.invoke(IPC.SETTINGS_GET_API_KEYS),
+  saveApiKeys: (keys) => ipcRenderer.invoke(IPC.SETTINGS_SAVE_API_KEYS, keys),
+  isConfigured: () => ipcRenderer.invoke(IPC.SETTINGS_IS_CONFIGURED),
+
+  // Sidecar
+  getSidecarStatus: () => ipcRenderer.invoke(IPC.SIDECAR_STATUS),
+  onSidecarStatusChanged: (callback) => {
+    const handler = (_: unknown, state: import("~/shared/ipc-channels").SidecarState) =>
+      callback(state);
+    ipcRenderer.on(IPC.SIDECAR_STATUS_CHANGED, handler);
+    return () => ipcRenderer.removeListener(IPC.SIDECAR_STATUS_CHANGED, handler);
+  },
+
+  // Local processing
+  processLocal: (audioFilePath) => ipcRenderer.invoke(IPC.LOCAL_PROCESS, audioFilePath),
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

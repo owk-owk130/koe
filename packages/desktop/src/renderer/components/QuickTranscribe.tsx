@@ -1,33 +1,60 @@
-import { useMutation } from "@tanstack/react-query";
-import { parseResponse, formatDuration } from "@koe/shared";
+import { formatDuration } from "@koe/shared";
 import { RecordingPanel } from "./RecordingPanel";
-import { Upload } from "lucide-react";
-import { useApiClient } from "~/renderer/hooks/useApiClient";
+import { Settings, Upload } from "lucide-react";
+import { useLocalTranscribe } from "~/renderer/hooks/useLocalTranscribe";
+import { useSidecar } from "~/renderer/hooks/useSidecar";
 
-export function QuickTranscribe() {
-  const client = useApiClient();
-  const mutation = useMutation({
-    mutationFn: (file: File) =>
-      parseResponse(client.api.v1.transcribe.$post({ form: { audio: file } })),
-  });
+interface QuickTranscribeProps {
+  onNavigateSettings?: () => void;
+}
+
+export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
+  const mutation = useLocalTranscribe();
+  const sidecar = useSidecar();
 
   const result = mutation.data;
   const loading = mutation.isPending;
   const error = mutation.error?.message ?? null;
+  const notReady = sidecar.status !== "ready";
 
-  const transcribeBlob = (blob: Blob) => {
-    const file = new File([blob], `quick-${Date.now()}.webm`, { type: "audio/webm" });
-    mutation.mutate(file);
+  const transcribeBlob = async (blob: Blob) => {
+    const filePath = await window.electronAPI.saveRecording(
+      await blob.arrayBuffer(),
+      `quick-${Date.now()}.webm`,
+    );
+    mutation.mutate(filePath);
   };
 
   const transcribeFile = async () => {
     const fileInfo = await window.electronAPI.selectAudioFile();
     if (!fileInfo) return;
-
-    const buffer = await window.electronAPI.readFile(fileInfo.path);
-    const file = new File([buffer], fileInfo.name, { type: "audio/mpeg" });
-    mutation.mutate(file);
+    mutation.mutate(fileInfo.path);
   };
+
+  if (notReady) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface">
+          <Settings size={24} className="text-text-secondary" />
+        </div>
+        <p className="text-[15px] font-semibold text-text-primary">APIキーの設定が必要です</p>
+        <p className="text-center text-[13px] leading-relaxed text-text-secondary">
+          文字起こしを使うには、設定画面で
+          <br />
+          Whisper APIキーを入力してください
+        </p>
+        {onNavigateSettings && (
+          <button
+            onClick={onNavigateSettings}
+            className="flex items-center gap-1.5 rounded-button bg-text-primary px-4 py-2 text-xs font-medium text-white hover:opacity-90"
+          >
+            <Settings size={13} />
+            設定を開く
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 flex-col gap-5 p-6">

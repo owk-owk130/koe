@@ -1,8 +1,8 @@
-import { AudioWaveform, List, LogIn, LogOut, Mic, Plus } from "lucide-react";
+import { AudioWaveform, List, LogIn, LogOut, Mic, Plus, Settings } from "lucide-react";
 import { statusLabel } from "@koe/shared";
 import type { useJobs } from "~/renderer/hooks/useJobs";
 
-type View = "transcribe" | "jobs";
+type View = "transcribe" | "jobs" | "settings";
 
 interface SidebarProps {
   view: View;
@@ -62,6 +62,17 @@ export function Sidebar({
         >
           <List size={16} />
           ジョブ一覧
+        </button>
+        <button
+          onClick={() => setView("settings")}
+          className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] ${
+            view === "settings"
+              ? "bg-surface font-medium text-text-primary"
+              : "text-text-secondary hover:bg-surface/50"
+          }`}
+        >
+          <Settings size={16} />
+          設定
         </button>
       </nav>
 

@@ -14,7 +14,23 @@ import { is } from "@electron-toolkit/utils";
 import Store from "electron-store";
 import { isTokenExpired, parseUser } from "@koe/shared";
 import { IPC } from "~/shared/ipc-channels";
+import type { AppSettings, ApiKeysInput } from "~/shared/ipc-channels";
 import { createTray, updateTrayState } from "./tray";
+import {
+  getSettings,
+  saveSettings as saveSettingsToStore,
+  getApiKeys,
+  saveApiKeys as saveApiKeysToStore,
+  isConfigured,
+} from "./settings";
+import {
+  startSidecar,
+  stopSidecar,
+  restartSidecar,
+  getSidecarState,
+  setOnStateChange,
+  processAudio,
+} from "./sidecar";
 
 const store = new Store<{ token?: string }>({ encryptionKey: "koe-desktop" });
 
@@ -156,6 +172,34 @@ ipcMain.handle(IPC.UPLOAD_MULTIPART, async (_, _filePath: string, _token: string
   return { jobId: "", status: "not_implemented" };
 });
 
+// ---- Settings IPC ----
+
+ipcMain.handle(IPC.SETTINGS_GET, () => getSettings());
+
+ipcMain.handle(IPC.SETTINGS_SAVE, async (_, settings: AppSettings) => {
+  saveSettingsToStore(settings);
+  await restartSidecar();
+});
+
+ipcMain.handle(IPC.SETTINGS_GET_API_KEYS, () => getApiKeys());
+
+ipcMain.handle(IPC.SETTINGS_SAVE_API_KEYS, async (_, keys: ApiKeysInput) => {
+  saveApiKeysToStore(keys);
+  await restartSidecar();
+});
+
+ipcMain.handle(IPC.SETTINGS_IS_CONFIGURED, () => isConfigured());
+
+// ---- Sidecar IPC ----
+
+ipcMain.handle(IPC.SIDECAR_STATUS, () => getSidecarState());
+
+// ---- Local process IPC ----
+
+ipcMain.handle(IPC.LOCAL_PROCESS, async (_, audioFilePath: string) => {
+  return processAudio(audioFilePath);
+});
+
 // ---- App lifecycle ----
 
 const gotLock = app.requestSingleInstanceLock();
@@ -170,9 +214,19 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     createWindow();
     createTray(mainWindow);
+
+    // Notify renderer of sidecar status changes
+    setOnStateChange((state) => {
+      mainWindow?.webContents.send(IPC.SIDECAR_STATUS_CHANGED, state);
+    });
+
+    // Auto-start sidecar if configured
+    if (isConfigured()) {
+      await startSidecar();
+    }
   });
 
   app.on("activate", () => {
@@ -188,7 +242,8 @@ if (!gotLock) {
     }
   });
 
-  app.on("before-quit", () => {
+  app.on("before-quit", async () => {
     isQuitting = true;
+    await stopSidecar();
   });
 }
