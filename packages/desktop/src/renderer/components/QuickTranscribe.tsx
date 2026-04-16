@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { formatDuration } from "@koe/shared";
 import { RecordingPanel } from "./RecordingPanel";
-import { Settings, Upload } from "lucide-react";
+import { Cloud, Settings, Upload } from "lucide-react";
 import { useLocalTranscribe } from "~/renderer/hooks/useLocalTranscribe";
 import { useSidecar } from "~/renderer/hooks/useSidecar";
+import { useSync } from "~/renderer/hooks/useSync";
 
 interface QuickTranscribeProps {
   onNavigateSettings?: () => void;
@@ -11,6 +13,9 @@ interface QuickTranscribeProps {
 export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
   const mutation = useLocalTranscribe();
   const sidecar = useSidecar();
+  const { sync, isSyncing, canSync } = useSync();
+  const [synced, setSynced] = useState(false);
+  const [audioFilename, setAudioFilename] = useState("");
 
   const result = mutation.data;
   const loading = mutation.isPending;
@@ -18,17 +23,29 @@ export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
   const notReady = sidecar.status !== "ready";
 
   const transcribeBlob = async (blob: Blob) => {
-    const filePath = await window.electronAPI.saveRecording(
-      await blob.arrayBuffer(),
-      `quick-${Date.now()}.webm`,
-    );
+    const filename = `quick-${Date.now()}.webm`;
+    const filePath = await window.electronAPI.saveRecording(await blob.arrayBuffer(), filename);
+    setAudioFilename(filename);
+    setSynced(false);
     mutation.mutate(filePath);
   };
 
   const transcribeFile = async () => {
     const fileInfo = await window.electronAPI.selectAudioFile();
     if (!fileInfo) return;
+    setAudioFilename(fileInfo.name);
+    setSynced(false);
     mutation.mutate(fileInfo.path);
+  };
+
+  const handleSync = () => {
+    if (!result) return;
+    sync(
+      { audioFilename, result },
+      {
+        onSuccess: () => setSynced(true),
+      },
+    );
   };
 
   if (notReady) {
@@ -132,6 +149,19 @@ export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
               )}
             </>
           )}
+
+          {result && !synced && canSync && (
+            <button
+              onClick={handleSync}
+              disabled={isSyncing}
+              className="flex items-center gap-1.5 rounded-button border border-border px-3 py-1.5 text-xs text-text-primary hover:bg-white disabled:opacity-50"
+            >
+              <Cloud size={12} />
+              {isSyncing ? "同期中..." : "クラウドに保存"}
+            </button>
+          )}
+
+          {result && synced && <p className="text-xs text-success">クラウドに保存しました</p>}
 
           {!loading && !error && !result && (
             <div className="flex flex-1 items-center justify-center rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white">

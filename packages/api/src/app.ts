@@ -5,6 +5,7 @@ import authRoutes from "./routes/auth";
 import jobsRoutes from "./routes/jobs";
 import transcribeRoutes from "./routes/transcribe";
 import uploadsRoutes from "./routes/uploads";
+import syncRoutes from "./routes/sync";
 import type { Env } from "./types";
 
 const app = new Hono<Env>()
@@ -13,7 +14,8 @@ const app = new Hono<Env>()
   .route("/auth", authRoutes)
   .route("/api/v1/jobs", jobsRoutes)
   .route("/api/v1/transcribe", transcribeRoutes)
-  .route("/api/v1/uploads", uploadsRoutes);
+  .route("/api/v1/uploads", uploadsRoutes)
+  .route("/api/v1/sync", syncRoutes);
 
 app.onError(onError);
 

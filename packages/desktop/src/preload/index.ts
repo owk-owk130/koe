@@ -27,6 +27,8 @@ const electronAPI: ElectronAPI = {
 
   // File system
   selectAudioFile: () => ipcRenderer.invoke(IPC.FS_SELECT_AUDIO_FILE),
+  saveAudioFile: (buffer, defaultName) =>
+    ipcRenderer.invoke(IPC.FS_SAVE_AUDIO_FILE, buffer, defaultName),
   readFile: (path) => ipcRenderer.invoke(IPC.FS_READ_FILE, path),
   getFileInfo: (path) => ipcRenderer.invoke(IPC.FS_GET_FILE_INFO, path),
 

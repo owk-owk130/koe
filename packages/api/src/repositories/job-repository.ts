@@ -167,6 +167,27 @@ export const createTopics = async (
   );
 };
 
+export const createCompletedJob = async (
+  db: D1Database,
+  input: {
+    id: string;
+    userId: string;
+    audioFilename: string;
+    summary: string | null;
+  },
+): Promise<Job> => {
+  const audioKey = `${input.userId}/audio/${input.id}/local-${input.audioFilename}`;
+  await db
+    .prepare(
+      "INSERT INTO jobs (id, user_id, audio_key, status, summary) VALUES (?, ?, ?, 'completed', ?)",
+    )
+    .bind(input.id, input.userId, audioKey, input.summary)
+    .run();
+
+  const row = await db.prepare("SELECT * FROM jobs WHERE id = ?").bind(input.id).first<JobRow>();
+  return toJob(row!);
+};
+
 export const findTopicsByJob = async (db: D1Database, jobId: string): Promise<Topic[]> => {
   const { results } = await db
     .prepare("SELECT * FROM topics WHERE job_id = ? ORDER BY topic_index ASC")
