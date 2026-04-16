@@ -54,7 +54,7 @@ function MaskedInput({
 }
 
 export function SettingsPanel() {
-  const { settings, apiKeys, loading, saveSettings, saveApiKeys, isSaving } = useSettings();
+  const { settings, apiKeys, loading, saveAll, isSaving, saveError } = useSettings();
   const sidecar = useSidecar();
 
   const [whisperApiKey, setWhisperApiKey] = useState("");
@@ -87,14 +87,17 @@ export function SettingsPanel() {
     );
   }
 
-  const handleSave = () => {
-    saveSettings({ whisperBaseUrl, whisperModel, geminiModel });
-    saveApiKeys({
-      whisperApiKey,
-      geminiApiKey: geminiApiKey || undefined,
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const handleSave = async () => {
+    try {
+      await saveAll({
+        settings: { whisperBaseUrl, whisperModel, geminiModel },
+        apiKeys: { whisperApiKey, geminiApiKey: geminiApiKey || undefined },
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      // saveError is set by the mutation
+    }
   };
 
   const canSave = whisperApiKey.trim() !== "";
@@ -182,6 +185,7 @@ export function SettingsPanel() {
           {isSaving ? "保存中..." : "保存"}
         </button>
         {saved && <span className="text-xs text-success">保存しました</span>}
+        {saveError && <span className="text-xs text-error">保存に失敗しました</span>}
       </div>
     </div>
   );

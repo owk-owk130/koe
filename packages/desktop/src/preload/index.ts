@@ -50,6 +50,7 @@ const electronAPI: ElectronAPI = {
   saveSettings: (settings) => ipcRenderer.invoke(IPC.SETTINGS_SAVE, settings),
   getApiKeys: () => ipcRenderer.invoke(IPC.SETTINGS_GET_API_KEYS),
   saveApiKeys: (keys) => ipcRenderer.invoke(IPC.SETTINGS_SAVE_API_KEYS, keys),
+  saveAll: (payload) => ipcRenderer.invoke(IPC.SETTINGS_SAVE_ALL, payload),
   isConfigured: () => ipcRenderer.invoke(IPC.SETTINGS_IS_CONFIGURED),
 
   // Sidecar

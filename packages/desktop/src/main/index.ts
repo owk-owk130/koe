@@ -187,17 +187,24 @@ ipcMain.handle(IPC.UPLOAD_MULTIPART, async (_, _filePath: string, _token: string
 
 ipcMain.handle(IPC.SETTINGS_GET, () => getSettings());
 
-ipcMain.handle(IPC.SETTINGS_SAVE, async (_, settings: AppSettings) => {
+ipcMain.handle(IPC.SETTINGS_SAVE, (_, settings: AppSettings) => {
   saveSettingsToStore(settings);
-  await restartSidecar();
 });
 
 ipcMain.handle(IPC.SETTINGS_GET_API_KEYS, () => getApiKeys());
 
-ipcMain.handle(IPC.SETTINGS_SAVE_API_KEYS, async (_, keys: ApiKeysInput) => {
+ipcMain.handle(IPC.SETTINGS_SAVE_API_KEYS, (_, keys: ApiKeysInput) => {
   saveApiKeysToStore(keys);
-  await restartSidecar();
 });
+
+ipcMain.handle(
+  IPC.SETTINGS_SAVE_ALL,
+  async (_, payload: { settings: AppSettings; apiKeys: ApiKeysInput }) => {
+    saveSettingsToStore(payload.settings);
+    saveApiKeysToStore(payload.apiKeys);
+    await restartSidecar();
+  },
+);
 
 ipcMain.handle(IPC.SETTINGS_IS_CONFIGURED, () => isConfigured());
 

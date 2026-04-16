@@ -41,6 +41,7 @@ export const IPC = {
   SETTINGS_SAVE: "settings:save",
   SETTINGS_GET_API_KEYS: "settings:get-api-keys",
   SETTINGS_SAVE_API_KEYS: "settings:save-api-keys",
+  SETTINGS_SAVE_ALL: "settings:save-all",
   SETTINGS_IS_CONFIGURED: "settings:is-configured",
 
   // Sidecar
@@ -91,6 +92,11 @@ export interface ApiKeysInput {
 export interface ApiKeysOutput {
   whisperApiKey: string | null;
   geminiApiKey: string | null;
+}
+
+export interface SaveAllPayload {
+  settings: AppSettings;
+  apiKeys: ApiKeysInput;
 }
 
 export type SidecarStatus = "stopped" | "starting" | "ready" | "error";
@@ -160,6 +166,7 @@ export interface ElectronAPI {
   saveSettings: (settings: AppSettings) => Promise<void>;
   getApiKeys: () => Promise<ApiKeysOutput>;
   saveApiKeys: (keys: ApiKeysInput) => Promise<void>;
+  saveAll: (payload: SaveAllPayload) => Promise<void>;
   isConfigured: () => Promise<boolean>;
 
   // Sidecar

@@ -40,7 +40,7 @@ packages/
 | レイヤー     | 技術                                                                             |
 | ------------ | -------------------------------------------------------------------------------- |
 | API          | Cloudflare Workers + Hono (TypeScript)                                           |
-| 音声処理     | Go (ローカル sidecar / Workers Containers / CLI / MCP)                            |
+| 音声処理     | Go (ローカル sidecar / Workers Containers / CLI / MCP)                           |
 | 文字起こし   | Workers AI Whisper (@cf/openai/whisper-large-v3-turbo)、OpenAI互換で差し替え可能 |
 | トピック分割 | Gemini Flash-Lite（デフォルト）、interface で差し替え可能                        |
 | DB           | Cloudflare D1                                                                    |
