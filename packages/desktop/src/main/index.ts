@@ -7,6 +7,7 @@ import {
   shell,
   systemPreferences,
 } from "electron";
+import { randomUUID } from "node:crypto";
 import { join } from "path";
 import { readFile, stat, writeFile } from "fs/promises";
 import { tmpdir } from "os";
@@ -14,9 +15,16 @@ import { is } from "@electron-toolkit/utils";
 import Store from "electron-store";
 import { isTokenExpired, parseUser } from "@koe/shared";
 import { IPC } from "~/shared/ipc-channels";
-import type { AppSettings, ApiKeysInput } from "~/shared/ipc-channels";
+import type {
+  AppSettings,
+  ApiKeysInput,
+  LocalJobDetailPayload,
+  LocalJobSummary,
+  LocalProcessResult,
+} from "~/shared/ipc-channels";
 import { createTray, updateTrayState } from "./tray";
-import { closeDesktopDatabase, initDesktopDatabase } from "./db";
+import { closeDesktopDatabase, getDesktopDatabase, initDesktopDatabase } from "./db";
+import { getLocalJob, listLocalJobs, saveLocalJob } from "./db/job-store";
 import {
   getSettings,
   saveSettings as saveSettingsToStore,
@@ -215,8 +223,73 @@ ipcMain.handle(IPC.SIDECAR_STATUS, () => getSidecarState());
 
 // ---- Local process IPC ----
 
-ipcMain.handle(IPC.LOCAL_PROCESS, async (_, audioFilePath: string) => {
-  return processAudio(audioFilePath);
+type SidecarResult = Omit<LocalProcessResult, "jobId">;
+
+ipcMain.handle(IPC.LOCAL_PROCESS, async (_, audioFilePath: string): Promise<LocalProcessResult> => {
+  const result = (await processAudio(audioFilePath)) as SidecarResult;
+  const jobId = randomUUID();
+  const filename = audioFilePath.split(/[/\\]/).pop() ?? "audio";
+
+  const { db } = getDesktopDatabase();
+  saveLocalJob(db, {
+    id: jobId,
+    audioFilename: filename,
+    summary: result.summary,
+    transcript: result.transcript,
+    topics: result.topics,
+    chunks: result.chunks,
+  });
+
+  return { jobId, ...result };
+});
+
+// ---- Local history IPC ----
+
+ipcMain.handle(IPC.HISTORY_LIST, (): LocalJobSummary[] => {
+  const { db } = getDesktopDatabase();
+  return listLocalJobs(db).map((row) => ({
+    id: row.id,
+    status: row.status,
+    audioKey: row.audioKey,
+    audioDurationSec: row.audioDurationSec,
+    summary: row.summary,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }));
+});
+
+ipcMain.handle(IPC.HISTORY_GET, (_, id: string): LocalJobDetailPayload | null => {
+  const { db } = getDesktopDatabase();
+  const detail = getLocalJob(db, id);
+  if (!detail) return null;
+  return {
+    job: {
+      id: detail.job.id,
+      status: detail.job.status,
+      audioKey: detail.job.audioKey,
+      audioDurationSec: detail.job.audioDurationSec,
+      summary: detail.job.summary,
+      createdAt: detail.job.createdAt,
+      updatedAt: detail.job.updatedAt,
+    },
+    topics: detail.topics.map((t) => ({
+      id: t.id,
+      topicIndex: t.topicIndex,
+      title: t.title,
+      summary: t.summary,
+      detail: t.detail,
+      startSec: t.startSec,
+      endSec: t.endSec,
+      transcript: t.transcript,
+    })),
+    chunks: detail.chunks.map((c) => ({
+      id: c.id,
+      chunkIndex: c.chunkIndex,
+      startSec: c.startSec,
+      endSec: c.endSec,
+      transcript: c.transcript,
+    })),
+  };
 });
 
 // ---- App lifecycle ----
