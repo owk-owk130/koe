@@ -5,10 +5,12 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
+    "predev": "electron-builder install-app-deps",
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "pretest": "pnpm rebuild better-sqlite3",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",
     "rebuild:native": "electron-builder install-app-deps",
