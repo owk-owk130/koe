@@ -1,4 +1,7 @@
+import { jobs } from "@koe/shared/db";
 import { DurableObject } from "cloudflare:workers";
+import { and, eq, sql } from "drizzle-orm";
+import { getDb } from "./lib/db";
 import { createChunks } from "./repositories/chunk-repository";
 import { createTopics, updateJobStatus } from "./repositories/job-repository";
 import { uploadJSON } from "./services/r2-storage";
@@ -78,12 +81,13 @@ export class KoeProcessor extends DurableObject<Bindings> {
   }
 
   private async processJob(job: JobPayload): Promise<void> {
+    const db = getDb(this.env.DB);
     // Idempotency: only process pending jobs
-    const row = await this.env.DB.prepare(
-      "UPDATE jobs SET status = 'processing', updated_at = datetime('now') WHERE id = ? AND status = 'pending' RETURNING id",
-    )
-      .bind(job.jobId)
-      .first<{ id: string }>();
+    const [row] = await db
+      .update(jobs)
+      .set({ status: "processing", updatedAt: sql`(datetime('now'))` })
+      .where(and(eq(jobs.id, job.jobId), eq(jobs.status, "pending")))
+      .returning({ id: jobs.id });
 
     if (!row) return; // Already processing or completed
 
@@ -159,11 +163,16 @@ export class KoeProcessor extends DurableObject<Bindings> {
     }
 
     // Update job status to completed
-    await this.env.DB.prepare(
-      "UPDATE jobs SET status = 'completed', summary = ?, total_chunks = ?, completed_chunks = ?, updated_at = datetime('now') WHERE id = ?",
-    )
-      .bind(result.summary, result.chunks.length, result.chunks.length, job.jobId)
-      .run();
+    await db
+      .update(jobs)
+      .set({
+        status: "completed",
+        summary: result.summary,
+        totalChunks: result.chunks.length,
+        completedChunks: result.chunks.length,
+        updatedAt: sql`(datetime('now'))`,
+      })
+      .where(eq(jobs.id, job.jobId));
   }
 
   private async ensureContainer(): Promise<void> {
