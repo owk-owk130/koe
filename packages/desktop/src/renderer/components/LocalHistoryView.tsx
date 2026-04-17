@@ -38,30 +38,29 @@ function LocalHistoryList({ onSelect }: { onSelect: (id: string) => void }) {
 
       {jobs.length > 0 && (
         <div className="space-y-2">
-          {jobs.map((job) => {
-            const filename = job.audioKey.split("/").pop() ?? job.id.slice(0, 8);
-            return (
-              <button
-                key={job.id}
-                onClick={() => onSelect(job.id)}
-                className="flex w-full flex-col gap-1 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4 text-left hover:border-brand/30"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="truncate text-[13px] font-semibold text-text-primary">
-                    {filename}
-                  </span>
+          {jobs.map((job) => (
+            <button
+              key={job.id}
+              onClick={() => onSelect(job.id)}
+              className="flex w-full flex-col gap-1 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4 text-left hover:border-brand/30"
+            >
+              <div className="flex items-center justify-between">
+                <span className="truncate text-[13px] font-semibold text-text-primary">
+                  {formatDate(job.createdAt)}
+                </span>
+                {job.audioDurationSec != null && (
                   <span className="shrink-0 font-mono text-[11px] text-text-secondary">
-                    {formatDate(job.createdAt)}
+                    {formatDuration(job.audioDurationSec)}
                   </span>
-                </div>
-                {job.summary && (
-                  <p className="line-clamp-2 text-xs leading-relaxed text-text-secondary">
-                    {job.summary}
-                  </p>
                 )}
-              </button>
-            );
-          })}
+              </div>
+              {job.summary && (
+                <p className="line-clamp-2 text-xs leading-relaxed text-text-secondary">
+                  {job.summary}
+                </p>
+              )}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -82,7 +81,6 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
   }
 
   const { job, topics, chunks } = data;
-  const filename = job.audioKey.split("/").pop() ?? job.id.slice(0, 8);
 
   return (
     <div className="flex flex-1 flex-col gap-5 p-6">
@@ -95,10 +93,12 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
       </button>
 
       <div>
-        <h1 className="text-xl font-semibold text-text-primary">{filename}</h1>
-        <p className="mt-1 font-mono text-[11px] text-text-secondary">
-          {formatDate(job.createdAt)}
-        </p>
+        <h1 className="text-xl font-semibold text-text-primary">{formatDate(job.createdAt)}</h1>
+        {job.audioDurationSec != null && (
+          <p className="mt-1 font-mono text-[11px] text-text-secondary">
+            {formatDuration(job.audioDurationSec)}
+          </p>
+        )}
       </div>
 
       {job.summary && (

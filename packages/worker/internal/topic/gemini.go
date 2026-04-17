@@ -113,7 +113,7 @@ func analysisResponseSchema() map[string]any {
 		"properties": map[string]any{
 			"summary": map[string]any{
 				"type":        "string",
-				"description": "音声全体の要約(2-3文。具体的な内容を含む)",
+				"description": "音声全体の要約。会話の全体像と流れ、主要な論点、結論を自分の言葉でまとめる。",
 			},
 			"topics": map[string]any{
 				"type": "array",
