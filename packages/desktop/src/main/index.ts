@@ -341,7 +341,18 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
-    initDesktopDatabase(join(app.getPath("userData"), "koe.db"));
+    try {
+      initDesktopDatabase(join(app.getPath("userData"), "koe.db"));
+    } catch (err) {
+      console.error("[db] failed to initialize local database", err);
+      const message = err instanceof Error ? err.message : String(err);
+      const hint = /NODE_MODULE_VERSION/.test(message)
+        ? "\n\nネイティブモジュールの ABI が Electron と一致していません。以下のコマンドで再ビルドしてから再起動してください:\n\n  pnpm --filter @koe/desktop rebuild:native"
+        : "";
+      dialog.showErrorBox("データベースの初期化に失敗しました", `${message}${hint}`);
+      app.quit();
+      return;
+    }
 
     createWindow();
     createTray(mainWindow);
