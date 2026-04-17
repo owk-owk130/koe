@@ -1,9 +1,11 @@
-import { jobs } from "@koe/shared/db";
 import { DurableObject } from "cloudflare:workers";
-import { and, eq, sql } from "drizzle-orm";
-import { getDb } from "./lib/db";
 import { createChunks } from "./repositories/chunk-repository";
-import { createTopics, updateJobStatus } from "./repositories/job-repository";
+import {
+  claimJobForProcessing,
+  completeJob,
+  createTopics,
+  updateJobStatus,
+} from "./repositories/job-repository";
 import { uploadJSON } from "./services/r2-storage";
 import type { Bindings } from "./types";
 
@@ -81,15 +83,8 @@ export class KoeProcessor extends DurableObject<Bindings> {
   }
 
   private async processJob(job: JobPayload): Promise<void> {
-    const db = getDb(this.env.DB);
-    // Idempotency: only process pending jobs
-    const [row] = await db
-      .update(jobs)
-      .set({ status: "processing", updatedAt: sql`(datetime('now'))` })
-      .where(and(eq(jobs.id, job.jobId), eq(jobs.status, "pending")))
-      .returning({ id: jobs.id });
-
-    if (!row) return; // Already processing or completed
+    const claimed = await claimJobForProcessing(this.env.DB, job.jobId);
+    if (!claimed) return; // Already processing or completed
 
     // Download audio from R2 as stream
     const r2Object = await this.env.BUCKET.get(job.audioKey);
@@ -162,17 +157,11 @@ export class KoeProcessor extends DurableObject<Bindings> {
       );
     }
 
-    // Update job status to completed
-    await db
-      .update(jobs)
-      .set({
-        status: "completed",
-        summary: result.summary,
-        totalChunks: result.chunks.length,
-        completedChunks: result.chunks.length,
-        updatedAt: sql`(datetime('now'))`,
-      })
-      .where(eq(jobs.id, job.jobId));
+    await completeJob(this.env.DB, job.jobId, {
+      summary: result.summary,
+      totalChunks: result.chunks.length,
+      completedChunks: result.chunks.length,
+    });
   }
 
   private async ensureContainer(): Promise<void> {

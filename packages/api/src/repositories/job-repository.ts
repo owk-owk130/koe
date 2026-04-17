@@ -1,5 +1,5 @@
 import { jobs, topics } from "@koe/shared/db";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "~/lib/db";
 
 export type Job = typeof jobs.$inferSelect;
@@ -57,6 +57,36 @@ export const updateJobStatus = async (
     .set({
       status,
       error: error ?? null,
+      updatedAt: sql`(datetime('now'))`,
+    })
+    .where(eq(jobs.id, id));
+};
+
+// Atomic state transition: pending → processing.
+// Used by the background processor to guarantee a single worker processes a job.
+export const claimJobForProcessing = async (d1: D1Database, id: string): Promise<boolean> => {
+  const db = getDb(d1);
+  const rows = await db
+    .update(jobs)
+    .set({ status: "processing", updatedAt: sql`(datetime('now'))` })
+    .where(and(eq(jobs.id, id), eq(jobs.status, "pending")))
+    .returning({ id: jobs.id });
+  return rows.length > 0;
+};
+
+export const completeJob = async (
+  d1: D1Database,
+  id: string,
+  input: { summary: string; totalChunks: number; completedChunks: number },
+): Promise<void> => {
+  const db = getDb(d1);
+  await db
+    .update(jobs)
+    .set({
+      status: "completed",
+      summary: input.summary,
+      totalChunks: input.totalChunks,
+      completedChunks: input.completedChunks,
       updatedAt: sql`(datetime('now'))`,
     })
     .where(eq(jobs.id, id));

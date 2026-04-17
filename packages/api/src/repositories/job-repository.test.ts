@@ -2,6 +2,8 @@ import { env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { setupD1 } from "~/test-helpers";
 import {
+  claimJobForProcessing,
+  completeJob,
   createJob,
   createTopics,
   findJobById,
@@ -69,6 +71,61 @@ describe("job-repository", () => {
     const job = await findJobById(env.DB, "job-2");
     expect(job!.status).toBe("failed");
     expect(job!.error).toBe("something went wrong");
+  });
+
+  describe("claimJobForProcessing", () => {
+    it("transitions pending → processing and returns true", async () => {
+      await createJob(env.DB, {
+        id: "claim-pending",
+        userId: "u1",
+        audioKey: "u1/audio/claim-pending/original.mp3",
+      });
+
+      const claimed = await claimJobForProcessing(env.DB, "claim-pending");
+      expect(claimed).toBe(true);
+
+      const job = await findJobById(env.DB, "claim-pending");
+      expect(job!.status).toBe("processing");
+    });
+
+    it("returns false when the job is not pending", async () => {
+      await createJob(env.DB, {
+        id: "claim-nonpending",
+        userId: "u1",
+        audioKey: "u1/audio/claim-nonpending/original.mp3",
+      });
+      await updateJobStatus(env.DB, "claim-nonpending", "processing");
+
+      const claimed = await claimJobForProcessing(env.DB, "claim-nonpending");
+      expect(claimed).toBe(false);
+    });
+
+    it("returns false when the job does not exist", async () => {
+      const claimed = await claimJobForProcessing(env.DB, "does-not-exist");
+      expect(claimed).toBe(false);
+    });
+  });
+
+  describe("completeJob", () => {
+    it("sets status completed with summary and chunk counts", async () => {
+      await createJob(env.DB, {
+        id: "complete-1",
+        userId: "u1",
+        audioKey: "u1/audio/complete-1/original.mp3",
+      });
+
+      await completeJob(env.DB, "complete-1", {
+        summary: "final summary",
+        totalChunks: 3,
+        completedChunks: 3,
+      });
+
+      const job = await findJobById(env.DB, "complete-1");
+      expect(job!.status).toBe("completed");
+      expect(job!.summary).toBe("final summary");
+      expect(job!.totalChunks).toBe(3);
+      expect(job!.completedChunks).toBe(3);
+    });
   });
 
   it("creates and finds topics", async () => {
