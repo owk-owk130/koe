@@ -4,6 +4,7 @@ import { setupD1 } from "~/test-helpers";
 import {
   claimJobForProcessing,
   completeJob,
+  createCompletedJob,
   createJob,
   createTopics,
   findJobById,
@@ -125,6 +126,48 @@ describe("job-repository", () => {
       expect(job!.summary).toBe("final summary");
       expect(job!.totalChunks).toBe(3);
       expect(job!.completedChunks).toBe(3);
+    });
+  });
+
+  describe("createCompletedJob", () => {
+    it("inserts a job in completed status with local- prefixed audioKey", async () => {
+      const job = await createCompletedJob(env.DB, {
+        id: "local-1",
+        userId: "u1",
+        audioFilename: "meeting.mp3",
+        summary: "pre-computed summary",
+      });
+
+      expect(job.id).toBe("local-1");
+      expect(job.status).toBe("completed");
+      expect(job.summary).toBe("pre-computed summary");
+      expect(job.audioKey).toBe("u1/audio/local-1/local-meeting.mp3");
+    });
+
+    it("allows null summary", async () => {
+      const job = await createCompletedJob(env.DB, {
+        id: "local-2",
+        userId: "u1",
+        audioFilename: "no-summary.wav",
+        summary: null,
+      });
+
+      expect(job.status).toBe("completed");
+      expect(job.summary).toBeNull();
+      expect(job.audioKey).toBe("u1/audio/local-2/local-no-summary.wav");
+    });
+
+    it("is discoverable via listJobsByUser alongside regular jobs", async () => {
+      await createCompletedJob(env.DB, {
+        id: "local-3",
+        userId: "u1",
+        audioFilename: "a.mp3",
+        summary: null,
+      });
+
+      const found = await findJobById(env.DB, "local-3");
+      expect(found).not.toBeNull();
+      expect(found!.userId).toBe("u1");
     });
   });
 
