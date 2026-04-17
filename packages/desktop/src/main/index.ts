@@ -16,6 +16,7 @@ import { isTokenExpired, parseUser } from "@koe/shared";
 import { IPC } from "~/shared/ipc-channels";
 import type { AppSettings, ApiKeysInput } from "~/shared/ipc-channels";
 import { createTray, updateTrayState } from "./tray";
+import { closeDesktopDatabase, initDesktopDatabase } from "./db";
 import {
   getSettings,
   saveSettings as saveSettingsToStore,
@@ -233,6 +234,8 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    initDesktopDatabase(join(app.getPath("userData"), "koe.db"));
+
     createWindow();
     createTray(mainWindow);
 
@@ -263,5 +266,6 @@ if (!gotLock) {
   app.on("before-quit", async () => {
     isQuitting = true;
     await stopSidecar();
+    closeDesktopDatabase();
   });
 }

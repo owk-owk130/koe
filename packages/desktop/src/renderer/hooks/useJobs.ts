@@ -9,7 +9,7 @@ export function useJobs() {
 
   const query = useQuery({
     queryKey: ["jobs"],
-    queryFn: () => parseResponse(client.api.v1.jobs.$get()),
+    queryFn: () => parseResponse(client.api.v1.jobs.$get({ query: { limit: "20", offset: "0" } })),
     enabled: !!token,
     refetchInterval: ({ state }) => {
       const jobs = state.data?.jobs;
