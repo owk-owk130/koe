@@ -25,6 +25,7 @@ import type {
 import { createTray, updateTrayState } from "./tray";
 import { closeDesktopDatabase, getDesktopDatabase, initDesktopDatabase } from "./db";
 import { getLocalJob, listLocalJobs, saveLocalJob } from "./db/job-store";
+import { syncPendingJobs } from "./sync/syncer";
 import {
   getSettings,
   saveSettings as saveSettingsToStore,
@@ -43,8 +44,36 @@ import {
 
 const store = new Store<{ token?: string }>({ encryptionKey: "koe-desktop" });
 
+const API_URL = "http://localhost:8787";
+
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
+
+const getActiveToken = (): string | null => {
+  const token = store.get("token");
+  if (!token || isTokenExpired(token)) return null;
+  return token;
+};
+
+// Fire-and-forget sync trigger. Errors are logged but never bubble up into the UI
+// because sync is best-effort — the local DB remains the source of truth.
+const triggerCloudSync = (): void => {
+  if (!getActiveToken()) return;
+  const { db } = getDesktopDatabase();
+  void syncPendingJobs(db, {
+    fetch: globalThis.fetch,
+    apiUrl: API_URL,
+    getToken: getActiveToken,
+  })
+    .then((result) => {
+      if (result.synced > 0 || result.failed > 0) {
+        console.log("[sync]", result);
+      }
+    })
+    .catch((err) => {
+      console.error("[sync] unexpected error", err);
+    });
+};
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -84,6 +113,8 @@ ipcMain.handle(IPC.AUTH_GET_TOKEN, () => {
 
 ipcMain.handle(IPC.AUTH_SAVE_TOKEN, (_, token: string) => {
   store.set("token", token);
+  // Newly-authenticated: flush any jobs that were processed while logged out.
+  triggerCloudSync();
 });
 
 ipcMain.handle(IPC.AUTH_CLEAR_TOKEN, () => {
@@ -240,6 +271,9 @@ ipcMain.handle(IPC.LOCAL_PROCESS, async (_, audioFilePath: string): Promise<Loca
     chunks: result.chunks,
   });
 
+  // Best-effort push to cloud when logged in.
+  triggerCloudSync();
+
   return { jobId, ...result };
 });
 
@@ -321,6 +355,9 @@ if (!gotLock) {
     if (isConfigured()) {
       await startSidecar();
     }
+
+    // Best-effort: flush any pending sync state accumulated since last run.
+    triggerCloudSync();
   });
 
   app.on("activate", () => {
