@@ -7,6 +7,7 @@ import {
   shell,
   systemPreferences,
 } from "electron";
+import { randomUUID } from "node:crypto";
 import { join } from "path";
 import { readFile, stat, writeFile } from "fs/promises";
 import { tmpdir } from "os";
@@ -14,8 +15,17 @@ import { is } from "@electron-toolkit/utils";
 import Store from "electron-store";
 import { isTokenExpired, parseUser } from "@koe/shared";
 import { IPC } from "~/shared/ipc-channels";
-import type { AppSettings, ApiKeysInput } from "~/shared/ipc-channels";
+import type {
+  AppSettings,
+  ApiKeysInput,
+  LocalJobDetailPayload,
+  LocalJobSummary,
+  LocalProcessResult,
+} from "~/shared/ipc-channels";
 import { createTray, updateTrayState } from "./tray";
+import { closeDesktopDatabase, getDesktopDatabase, initDesktopDatabase } from "./db";
+import { getLocalJob, listLocalJobs, saveLocalJob } from "./db/job-store";
+import { syncPendingJobs } from "./sync/syncer";
 import {
   getSettings,
   saveSettings as saveSettingsToStore,
@@ -34,8 +44,36 @@ import {
 
 const store = new Store<{ token?: string }>({ encryptionKey: "koe-desktop" });
 
+const API_URL = "http://localhost:8787";
+
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
+
+const getActiveToken = (): string | null => {
+  const token = store.get("token");
+  if (!token || isTokenExpired(token)) return null;
+  return token;
+};
+
+// Fire-and-forget sync trigger. Errors are logged but never bubble up into the UI
+// because sync is best-effort — the local DB remains the source of truth.
+const triggerCloudSync = (): void => {
+  if (!getActiveToken()) return;
+  const { db } = getDesktopDatabase();
+  void syncPendingJobs(db, {
+    fetch: globalThis.fetch,
+    apiUrl: API_URL,
+    getToken: getActiveToken,
+  })
+    .then((result) => {
+      if (result.synced > 0 || result.failed > 0) {
+        console.log("[sync]", result);
+      }
+    })
+    .catch((err) => {
+      console.error("[sync] unexpected error", err);
+    });
+};
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -75,6 +113,8 @@ ipcMain.handle(IPC.AUTH_GET_TOKEN, () => {
 
 ipcMain.handle(IPC.AUTH_SAVE_TOKEN, (_, token: string) => {
   store.set("token", token);
+  // Newly-authenticated: flush any jobs that were processed while logged out.
+  triggerCloudSync();
 });
 
 ipcMain.handle(IPC.AUTH_CLEAR_TOKEN, () => {
@@ -214,8 +254,76 @@ ipcMain.handle(IPC.SIDECAR_STATUS, () => getSidecarState());
 
 // ---- Local process IPC ----
 
-ipcMain.handle(IPC.LOCAL_PROCESS, async (_, audioFilePath: string) => {
-  return processAudio(audioFilePath);
+type SidecarResult = Omit<LocalProcessResult, "jobId">;
+
+ipcMain.handle(IPC.LOCAL_PROCESS, async (_, audioFilePath: string): Promise<LocalProcessResult> => {
+  const result = (await processAudio(audioFilePath)) as SidecarResult;
+  const jobId = randomUUID();
+  const filename = audioFilePath.split(/[/\\]/).pop() ?? "audio";
+
+  const { db } = getDesktopDatabase();
+  saveLocalJob(db, {
+    id: jobId,
+    audioFilename: filename,
+    summary: result.summary,
+    transcript: result.transcript,
+    topics: result.topics,
+    chunks: result.chunks,
+  });
+
+  // Best-effort push to cloud when logged in.
+  triggerCloudSync();
+
+  return { jobId, ...result };
+});
+
+// ---- Local history IPC ----
+
+ipcMain.handle(IPC.HISTORY_LIST, (): LocalJobSummary[] => {
+  const { db } = getDesktopDatabase();
+  return listLocalJobs(db).map((row) => ({
+    id: row.id,
+    status: row.status,
+    audioKey: row.audioKey,
+    audioDurationSec: row.audioDurationSec,
+    summary: row.summary,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }));
+});
+
+ipcMain.handle(IPC.HISTORY_GET, (_, id: string): LocalJobDetailPayload | null => {
+  const { db } = getDesktopDatabase();
+  const detail = getLocalJob(db, id);
+  if (!detail) return null;
+  return {
+    job: {
+      id: detail.job.id,
+      status: detail.job.status,
+      audioKey: detail.job.audioKey,
+      audioDurationSec: detail.job.audioDurationSec,
+      summary: detail.job.summary,
+      createdAt: detail.job.createdAt,
+      updatedAt: detail.job.updatedAt,
+    },
+    topics: detail.topics.map((t) => ({
+      id: t.id,
+      topicIndex: t.topicIndex,
+      title: t.title,
+      summary: t.summary,
+      detail: t.detail,
+      startSec: t.startSec,
+      endSec: t.endSec,
+      transcript: t.transcript,
+    })),
+    chunks: detail.chunks.map((c) => ({
+      id: c.id,
+      chunkIndex: c.chunkIndex,
+      startSec: c.startSec,
+      endSec: c.endSec,
+      transcript: c.transcript,
+    })),
+  };
 });
 
 // ---- App lifecycle ----
@@ -233,6 +341,8 @@ if (!gotLock) {
   });
 
   app.whenReady().then(async () => {
+    initDesktopDatabase(join(app.getPath("userData"), "koe.db"));
+
     createWindow();
     createTray(mainWindow);
 
@@ -245,6 +355,9 @@ if (!gotLock) {
     if (isConfigured()) {
       await startSidecar();
     }
+
+    // Best-effort: flush any pending sync state accumulated since last run.
+    triggerCloudSync();
   });
 
   app.on("activate", () => {
@@ -263,5 +376,6 @@ if (!gotLock) {
   app.on("before-quit", async () => {
     isQuitting = true;
     await stopSidecar();
+    closeDesktopDatabase();
   });
 }

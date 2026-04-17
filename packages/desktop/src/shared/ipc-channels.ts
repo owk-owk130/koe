@@ -50,6 +50,10 @@ export const IPC = {
 
   // Local processing
   LOCAL_PROCESS: "local:process",
+
+  // Local history (SQLite-backed)
+  HISTORY_LIST: "history:list",
+  HISTORY_GET: "history:get",
 } as const;
 
 // ---- Payload types ----
@@ -108,6 +112,7 @@ export interface SidecarState {
 }
 
 export interface LocalProcessResult {
+  jobId: string;
   transcript: {
     text: string;
     segments: Array<{ text: string; start_sec: number; end_sec: number }>;
@@ -123,6 +128,42 @@ export interface LocalProcessResult {
     transcript: string;
   }>;
   chunks: Array<{ index: number; start_sec: number; end_sec: number; text: string }>;
+}
+
+// Local history payloads (SQLite-backed, one-way cloud sync applies only when logged in)
+export interface LocalJobSummary {
+  id: string;
+  status: string;
+  audioKey: string;
+  audioDurationSec: number | null;
+  summary: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LocalJobTopic {
+  id: string;
+  topicIndex: number;
+  title: string;
+  summary: string | null;
+  detail: string | null;
+  startSec: number | null;
+  endSec: number | null;
+  transcript: string;
+}
+
+export interface LocalJobChunk {
+  id: string;
+  chunkIndex: number;
+  startSec: number;
+  endSec: number;
+  transcript: string | null;
+}
+
+export interface LocalJobDetailPayload {
+  job: LocalJobSummary;
+  topics: LocalJobTopic[];
+  chunks: LocalJobChunk[];
 }
 
 // ---- ElectronAPI type (exposed via contextBridge) ----
@@ -175,4 +216,8 @@ export interface ElectronAPI {
 
   // Local processing
   processLocal: (audioFilePath: string) => Promise<LocalProcessResult>;
+
+  // Local history
+  listHistory: () => Promise<LocalJobSummary[]>;
+  getHistoryJob: (id: string) => Promise<LocalJobDetailPayload | null>;
 }

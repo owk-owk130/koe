@@ -64,6 +64,10 @@ const electronAPI: ElectronAPI = {
 
   // Local processing
   processLocal: (audioFilePath) => ipcRenderer.invoke(IPC.LOCAL_PROCESS, audioFilePath),
+
+  // Local history
+  listHistory: () => ipcRenderer.invoke(IPC.HISTORY_LIST),
+  getHistoryJob: (id) => ipcRenderer.invoke(IPC.HISTORY_GET, id),
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

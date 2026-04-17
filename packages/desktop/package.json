@@ -9,20 +9,27 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "rebuild:native": "electron-builder install-app-deps",
     "package": "electron-vite build && electron-builder --config electron-builder.yml"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
     "@koe/shared": "workspace:*",
     "@tanstack/react-query": "^5.99.0",
+    "better-sqlite3": "^12.9.0",
+    "drizzle-orm": "^0.44.7",
     "electron-store": "^10.0.1",
     "lucide-react": "^1.8.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.2",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.5.2",
+    "drizzle-kit": "^0.31.10",
     "electron": "^41.2.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
@@ -30,6 +37,7 @@
     "react-dom": "^19.2.5",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite": "^7.3.2"
+    "vite": "^7.3.2",
+    "vitest": "^4.1.4"
   }
 }

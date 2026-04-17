@@ -1,6 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 import { createChunks } from "./repositories/chunk-repository";
-import { createTopics, updateJobStatus } from "./repositories/job-repository";
+import {
+  claimJobForProcessing,
+  completeJob,
+  createTopics,
+  updateJobStatus,
+} from "./repositories/job-repository";
 import { uploadJSON } from "./services/r2-storage";
 import type { Bindings } from "./types";
 
@@ -78,14 +83,8 @@ export class KoeProcessor extends DurableObject<Bindings> {
   }
 
   private async processJob(job: JobPayload): Promise<void> {
-    // Idempotency: only process pending jobs
-    const row = await this.env.DB.prepare(
-      "UPDATE jobs SET status = 'processing', updated_at = datetime('now') WHERE id = ? AND status = 'pending' RETURNING id",
-    )
-      .bind(job.jobId)
-      .first<{ id: string }>();
-
-    if (!row) return; // Already processing or completed
+    const claimed = await claimJobForProcessing(this.env.DB, job.jobId);
+    if (!claimed) return; // Already processing or completed
 
     // Download audio from R2 as stream
     const r2Object = await this.env.BUCKET.get(job.audioKey);
@@ -158,12 +157,11 @@ export class KoeProcessor extends DurableObject<Bindings> {
       );
     }
 
-    // Update job status to completed
-    await this.env.DB.prepare(
-      "UPDATE jobs SET status = 'completed', summary = ?, total_chunks = ?, completed_chunks = ?, updated_at = datetime('now') WHERE id = ?",
-    )
-      .bind(result.summary, result.chunks.length, result.chunks.length, job.jobId)
-      .run();
+    await completeJob(this.env.DB, job.jobId, {
+      summary: result.summary,
+      totalChunks: result.chunks.length,
+      completedChunks: result.chunks.length,
+    });
   }
 
   private async ensureContainer(): Promise<void> {

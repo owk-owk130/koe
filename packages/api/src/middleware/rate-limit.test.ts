@@ -10,6 +10,8 @@ describe("rateLimit", () => {
     app.get("/test", (c) => c.json({ ok: true }));
 
     for (let i = 0; i < 3; i++) {
+      // sequential required to exercise the in-memory rate-limit counter
+      // oxlint-disable-next-line no-await-in-loop
       const res = await app.request("/test", {
         headers: { "X-Forwarded-For": "1.2.3.4" },
       });

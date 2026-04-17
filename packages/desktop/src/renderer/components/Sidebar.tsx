@@ -1,8 +1,8 @@
-import { AudioWaveform, List, LogIn, LogOut, Mic, Plus, Settings } from "lucide-react";
+import { AudioWaveform, History, List, LogIn, LogOut, Mic, Plus, Settings } from "lucide-react";
 import { statusLabel } from "@koe/shared";
 import type { useJobs } from "~/renderer/hooks/useJobs";
 
-type View = "transcribe" | "jobs" | "settings";
+type View = "transcribe" | "history" | "jobs" | "settings";
 
 interface SidebarProps {
   view: View;
@@ -51,6 +51,17 @@ export function Sidebar({
           クイック文字起こし
         </button>
         <button
+          onClick={() => setView("history")}
+          className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] ${
+            view === "history"
+              ? "bg-surface font-medium text-text-primary"
+              : "text-text-secondary hover:bg-surface/50"
+          }`}
+        >
+          <History size={16} />
+          履歴
+        </button>
+        <button
           onClick={() => setView("jobs")}
           className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] ${
             !isAuthenticated
@@ -61,7 +72,7 @@ export function Sidebar({
           }`}
         >
           <List size={16} />
-          ジョブ一覧
+          クラウドジョブ
         </button>
         <button
           onClick={() => setView("settings")}

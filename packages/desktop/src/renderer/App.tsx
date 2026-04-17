@@ -9,6 +9,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { Sidebar } from "./components/Sidebar";
 import { QuickTranscribe } from "./components/QuickTranscribe";
 import { JobDetail } from "./components/JobDetail";
+import { LocalHistoryView } from "./components/LocalHistoryView";
 import { RecordingPanel } from "./components/RecordingPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 
@@ -18,7 +19,7 @@ const queryClient = new QueryClient({
   },
 });
 
-type View = "transcribe" | "jobs" | "settings";
+type View = "transcribe" | "history" | "jobs" | "settings";
 
 function JobsEmptyState() {
   return (
@@ -141,6 +142,8 @@ function AppContent() {
           <SettingsPanel />
         ) : view === "transcribe" ? (
           <QuickTranscribe onNavigateSettings={() => setView("settings")} />
+        ) : view === "history" ? (
+          <LocalHistoryView />
         ) : !isAuthenticated ? (
           <AuthScreen />
         ) : (

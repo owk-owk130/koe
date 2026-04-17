@@ -14,9 +14,10 @@
     "format": "pnpm -w exec oxfmt --write .",
     "format:check": "pnpm -w exec oxfmt --check .",
     "typecheck": "pnpm --filter @koe/api typecheck",
-    "test": "pnpm test:shared && pnpm test:api && pnpm test:worker",
+    "test": "pnpm test:shared && pnpm test:api && pnpm test:desktop && pnpm test:worker",
     "test:shared": "pnpm --filter @koe/shared test",
     "test:api": "pnpm --filter @koe/api test",
+    "test:desktop": "pnpm --filter @koe/desktop test",
     "test:worker": "cd packages/worker && mise x -- go test ./..."
   },
   "devDependencies": {
@@ -25,6 +26,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "better-sqlite3",
       "electron",
       "esbuild"
     ]
