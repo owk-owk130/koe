@@ -1,16 +1,10 @@
-import { AudioWaveform, History, List, LogIn, LogOut, Mic, Plus, Settings } from "lucide-react";
-import { statusLabel } from "@koe/shared";
-import type { useJobs } from "~/renderer/hooks/useJobs";
+import { AudioWaveform, History, LogIn, LogOut, Mic, Settings } from "lucide-react";
 
-type View = "transcribe" | "history" | "jobs" | "settings";
+type View = "transcribe" | "history" | "settings" | "auth";
 
 interface SidebarProps {
   view: View;
   setView: (v: View) => void;
-  jobs: ReturnType<typeof useJobs>["jobs"];
-  selectedJobId: string | null;
-  onSelectJob: (id: string) => void;
-  onNewJob: () => void;
   onLogout: () => void;
   userInitial: string | null;
   userEmail: string | null;
@@ -20,10 +14,6 @@ interface SidebarProps {
 export function Sidebar({
   view,
   setView,
-  jobs,
-  selectedJobId,
-  onSelectJob,
-  onNewJob,
   onLogout,
   userInitial,
   userEmail,
@@ -62,19 +52,6 @@ export function Sidebar({
           履歴
         </button>
         <button
-          onClick={() => setView("jobs")}
-          className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] ${
-            !isAuthenticated
-              ? "text-text-secondary/35"
-              : view === "jobs" && !selectedJobId
-                ? "bg-surface font-medium text-text-primary"
-                : "text-text-secondary hover:bg-surface/50"
-          }`}
-        >
-          <List size={16} />
-          クラウドジョブ
-        </button>
-        <button
           onClick={() => setView("settings")}
           className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] ${
             view === "settings"
@@ -87,87 +64,37 @@ export function Sidebar({
         </button>
       </nav>
 
-      {isAuthenticated && (
-        <>
-          {/* Separator */}
-          <div className="mx-4 my-2 h-px bg-surface" />
+      <div className="flex-1" />
 
-          {/* Job list header */}
-          <div className="flex items-center justify-between px-4 py-1">
-            <span className="text-[11px] font-semibold tracking-wide text-text-secondary">
-              最近のジョブ
-            </span>
-            <button onClick={onNewJob} className="text-text-secondary hover:text-text-primary">
-              <Plus size={14} />
-            </button>
+      {isAuthenticated && userInitial && (
+        <div className="flex items-center gap-2 border-t border-surface px-4 py-3">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-surface text-xs font-semibold text-text-primary">
+            {userInitial}
           </div>
-
-          {/* Job list */}
-          <div className="flex-1 space-y-0.5 overflow-auto px-2">
-            {jobs.map((job) => {
-              const isSelected = selectedJobId === job.id;
-              const isProcessing = job.status === "processing" || job.status === "pending";
-              return (
-                <button
-                  key={job.id}
-                  onClick={() => {
-                    onSelectJob(job.id);
-                    setView("jobs");
-                  }}
-                  className={`flex w-full flex-col gap-0.5 rounded-md px-2 py-1.5 text-left ${
-                    isSelected ? "bg-brand/[0.08]" : "hover:bg-surface/50"
-                  }`}
-                >
-                  <span
-                    className={`truncate text-xs font-medium ${isSelected ? "text-brand" : "text-text-primary"}`}
-                  >
-                    {job.audio_key?.split("/").pop() ?? job.id.slice(0, 8)}
-                  </span>
-                  <span
-                    className={`text-[11px] ${isProcessing ? "text-brand" : "text-text-secondary"}`}
-                  >
-                    {statusLabel(job.status)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* User */}
-          {userInitial && (
-            <div className="flex items-center gap-2 border-t border-surface px-4 py-3">
-              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-surface text-xs font-semibold text-text-primary">
-                {userInitial}
-              </div>
-              {userEmail && (
-                <span className="flex-1 truncate text-[11px] text-text-secondary">{userEmail}</span>
-              )}
-              <button onClick={onLogout} className="text-text-secondary hover:text-text-primary">
-                <LogOut size={14} />
-              </button>
-            </div>
+          {userEmail && (
+            <span className="flex-1 truncate text-[11px] text-text-secondary">{userEmail}</span>
           )}
-        </>
+          <button onClick={onLogout} className="text-text-secondary hover:text-text-primary">
+            <LogOut size={14} />
+          </button>
+        </div>
       )}
 
       {!isAuthenticated && (
-        <>
-          <div className="flex-1" />
-          <div className="flex flex-col gap-2.5 border-t border-surface px-4 py-4">
-            <p className="text-[11px] leading-relaxed text-text-secondary">
-              ログインするとジョブの
-              <br />
-              保存・振り返りができます
-            </p>
-            <button
-              onClick={() => setView("jobs")}
-              className="flex w-full items-center justify-center gap-1.5 rounded-button bg-text-primary py-2 text-xs font-medium text-white hover:opacity-90"
-            >
-              <LogIn size={13} />
-              Google でログイン
-            </button>
-          </div>
-        </>
+        <div className="flex flex-col gap-2.5 border-t border-surface px-4 py-4">
+          <p className="text-[11px] leading-relaxed text-text-secondary">
+            ログインすると履歴が
+            <br />
+            クラウドに同期されます
+          </p>
+          <button
+            onClick={() => setView("auth")}
+            className="flex w-full items-center justify-center gap-1.5 rounded-button bg-text-primary py-2 text-xs font-medium text-white hover:opacity-90"
+          >
+            <LogIn size={13} />
+            Google でログイン
+          </button>
+        </div>
       )}
     </aside>
   );
