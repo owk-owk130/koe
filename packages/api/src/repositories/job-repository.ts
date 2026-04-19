@@ -1,5 +1,5 @@
 import { jobs, topics } from "@koe/shared/db";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import { getDb } from "~/lib/db";
 
 export type Job = typeof jobs.$inferSelect;
@@ -154,4 +154,48 @@ export const createCompletedJob = async (
 export const findTopicsByJob = async (d1: D1Database, jobId: string): Promise<Topic[]> => {
   const db = getDb(d1);
   return db.select().from(topics).where(eq(topics.jobId, jobId)).orderBy(asc(topics.topicIndex));
+};
+
+// SQLite's LIKE does not honor escape sequences unless an ESCAPE clause is attached,
+// so callers must use `likeEscape` alongside `ESCAPE '\\'` in the SQL fragment.
+const likeEscape = (value: string): string => value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+
+export const searchTopicsByUser = async (
+  d1: D1Database,
+  userId: string,
+  opts: { query: string; limit?: number },
+): Promise<Topic[]> => {
+  const limit = Math.min(opts.limit ?? 20, 50);
+  const pattern = `%${likeEscape(opts.query)}%`;
+  const db = getDb(d1);
+
+  const rows = await db
+    .select({
+      id: topics.id,
+      jobId: topics.jobId,
+      topicIndex: topics.topicIndex,
+      title: topics.title,
+      summary: topics.summary,
+      detail: topics.detail,
+      startSec: topics.startSec,
+      endSec: topics.endSec,
+      transcript: topics.transcript,
+      transcriptKey: topics.transcriptKey,
+      createdAt: topics.createdAt,
+    })
+    .from(topics)
+    .innerJoin(jobs, eq(jobs.id, topics.jobId))
+    .where(
+      and(
+        eq(jobs.userId, userId),
+        or(
+          sql`${topics.title} LIKE ${pattern} ESCAPE '\\'`,
+          sql`${topics.summary} LIKE ${pattern} ESCAPE '\\'`,
+        ),
+      ),
+    )
+    .orderBy(desc(topics.createdAt))
+    .limit(limit);
+
+  return rows;
 };
