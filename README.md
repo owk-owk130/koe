@@ -81,7 +81,40 @@ go run ./cmd/cli <audio-file.mp3>
 
 ### MCP Server
 
-Claude Desktop / Claude Code から利用する場合:
+koe は 2 種類の MCP サーバーを提供する。
+
+#### Hono (Cloudflare Workers) 版 — リモート MCP
+
+認証済みユーザーが自分の音声アーカイブ（ジョブ／トピック）を Claude Desktop / モバイルアプリから
+検索・参照するためのリモート MCP。Workers API に `/mcp` として同居する（Streamable HTTP transport）。
+
+提供ツール:
+
+| Tool            | 引数                | 用途                                |
+| --------------- | ------------------- | ----------------------------------- |
+| `list_jobs`     | `limit?`, `offset?` | 自分のジョブ一覧                    |
+| `get_job`       | `job_id`            | ジョブ詳細                          |
+| `get_topics`    | `job_id`            | ジョブに紐づくトピック一覧          |
+| `search_topics` | `query`, `limit?`   | タイトル/サマリ部分一致（自分のみ） |
+
+Claude Desktop 設定例:
+
+```json
+{
+  "mcpServers": {
+    "koe": {
+      "url": "https://<your-workers-domain>/mcp",
+      "headers": { "Authorization": "Bearer <JWT>" }
+    }
+  }
+}
+```
+
+JWT は `/auth/device` → `/auth/token` の Device Flow で発行する。
+
+#### Go (stdio) 版 — ローカル MCP
+
+手元の音声ファイルをそのまま文字起こし／トピック分割する用途。認証不要。
 
 ```bash
 cd packages/worker
@@ -93,7 +126,7 @@ MCP 設定例:
 ```json
 {
   "mcpServers": {
-    "koe": {
+    "koe-local": {
       "command": "go",
       "args": ["run", "./cmd/mcp"],
       "cwd": "/path/to/koe/packages/worker",

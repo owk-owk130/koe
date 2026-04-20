@@ -70,7 +70,21 @@ DELETE /api/v1/uploads/:uploadId             # 中止
 # 認証
 GET  /auth/device              # Device Flow 開始
 POST /auth/token               # トークン交換
+
+# MCP（Streamable HTTP、認証必須）
+ALL  /mcp                      # Claude Desktop / モバイル向けリモート MCP
 ```
+
+### MCP ツール
+
+`/mcp` は `requireAuth` 下で以下 4 ツールを公開（参照系のみ、ユーザーごとにデータ分離）:
+
+| Tool            | 説明                                       |
+| --------------- | ------------------------------------------ |
+| `list_jobs`     | 自ユーザーのジョブ一覧                     |
+| `get_job`       | ジョブ詳細（他ユーザーのジョブは返さない） |
+| `get_topics`    | ジョブに紐づくトピック一覧                 |
+| `search_topics` | タイトル/サマリ LIKE 検索、自ユーザー範囲  |
 
 - `/transcribe` は `optionalAuth`：トークンなしでも使えるが、将来 `requireAuth` に差し替え可能
 - 認証ありエンドポイントはユーザーごとにデータ分離

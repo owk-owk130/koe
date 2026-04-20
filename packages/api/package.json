@@ -18,8 +18,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@hono/mcp": "^0.2.5",
     "@hono/zod-validator": "^0.7.6",
     "@koe/shared": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "drizzle-orm": "^0.44.7",
     "hono": "^4.12",
     "zod": "^4.3.6"

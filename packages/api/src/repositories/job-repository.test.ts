@@ -10,6 +10,7 @@ import {
   findJobById,
   findTopicsByJob,
   listJobsByUser,
+  searchTopicsByUser,
   updateJobStatus,
 } from "./job-repository";
 
@@ -197,5 +198,120 @@ describe("job-repository", () => {
     expect(topics.length).toBe(2);
     expect(topics[0].title).toBe("Introduction");
     expect(topics[1].title).toBe("Main Discussion");
+  });
+
+  describe("searchTopicsByUser", () => {
+    beforeAll(async () => {
+      // second user with their own job+topic to verify isolation
+      await env.DB.prepare("INSERT INTO users (id, google_id, email, name) VALUES (?, ?, ?, ?)")
+        .bind("u2", "g2", "other@test.com", "Other")
+        .run();
+      await createJob(env.DB, {
+        id: "search-job-u1",
+        userId: "u1",
+        audioKey: "u1/audio/search-job-u1/original.mp3",
+      });
+      await createJob(env.DB, {
+        id: "search-job-u2",
+        userId: "u2",
+        audioKey: "u2/audio/search-job-u2/original.mp3",
+      });
+      await createTopics(env.DB, "search-job-u1", [
+        {
+          id: "search-topic-1",
+          topicIndex: 0,
+          title: "React performance tuning",
+          summary: "Covers memoization and profiling",
+          transcript: "body 1",
+        },
+        {
+          id: "search-topic-2",
+          topicIndex: 1,
+          title: "Database migrations",
+          summary: "About Drizzle and D1",
+          transcript: "body 2",
+        },
+        {
+          id: "search-topic-3",
+          topicIndex: 2,
+          title: "Weekly standup",
+          summary: "General updates",
+          transcript: "body 3",
+        },
+      ]);
+      await createTopics(env.DB, "search-job-u2", [
+        {
+          id: "search-topic-other",
+          topicIndex: 0,
+          title: "React hooks deep dive",
+          summary: "Something about React",
+          transcript: "body other",
+        },
+      ]);
+      await createTopics(env.DB, "search-job-u1", [
+        {
+          id: "search-topic-pct",
+          topicIndex: 3,
+          title: "Battery 100% milestone",
+          summary: "plain text",
+          transcript: "body pct",
+        },
+        {
+          id: "search-topic-underscore",
+          topicIndex: 4,
+          title: "plain title",
+          summary: "snake_case convention",
+          transcript: "body us",
+        },
+      ]);
+    });
+
+    it("matches on title", async () => {
+      const results = await searchTopicsByUser(env.DB, "u1", { query: "React" });
+      expect(results.length).toBe(1);
+      expect(results[0].id).toBe("search-topic-1");
+      expect(results[0].jobId).toBe("search-job-u1");
+    });
+
+    it("matches on summary", async () => {
+      const results = await searchTopicsByUser(env.DB, "u1", { query: "Drizzle" });
+      expect(results.length).toBe(1);
+      expect(results[0].id).toBe("search-topic-2");
+    });
+
+    it("does not return topics owned by other users", async () => {
+      const results = await searchTopicsByUser(env.DB, "u1", { query: "React" });
+      expect(results.every((t) => t.id !== "search-topic-other")).toBe(true);
+    });
+
+    it("honors limit", async () => {
+      const results = await searchTopicsByUser(env.DB, "u1", { query: "e", limit: 1 });
+      expect(results.length).toBe(1);
+    });
+
+    it("treats '%' in the query as a literal, not a wildcard", async () => {
+      const results = await searchTopicsByUser(env.DB, "u1", { query: "100%" });
+      const ids = results.map((t) => t.id);
+      expect(ids).toContain("search-topic-pct");
+      // '%' must not expand to match other titles that lack a literal '%'
+      expect(ids).not.toContain("search-topic-1");
+      expect(ids).not.toContain("search-topic-2");
+      expect(ids).not.toContain("search-topic-3");
+    });
+
+    it("treats '_' in the query as a literal, not a single-char wildcard", async () => {
+      const results = await searchTopicsByUser(env.DB, "u1", { query: "snake_case" });
+      const ids = results.map((t) => t.id);
+      expect(ids).toContain("search-topic-underscore");
+      // '_' must not match arbitrary single chars in unrelated rows
+      expect(ids.length).toBe(1);
+    });
+
+    it("returns empty when nothing matches", async () => {
+      const results = await searchTopicsByUser(env.DB, "u1", {
+        query: "zzz-no-match-here",
+      });
+      expect(results).toEqual([]);
+    });
   });
 });
