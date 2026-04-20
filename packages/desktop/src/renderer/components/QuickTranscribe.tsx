@@ -92,6 +92,17 @@ export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
               </p>
             </div>
 
+            {result.summary && (
+              <>
+                <h2 className="text-[15px] font-semibold text-text-primary">概要</h2>
+                <div className="rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-[#f8f8f8] p-4">
+                  <p className="text-[13px] leading-relaxed text-text-secondary">
+                    {result.summary}
+                  </p>
+                </div>
+              </>
+            )}
+
             {result.topics.length > 0 && (
               <>
                 <h2 className="text-[15px] font-semibold text-text-primary">トピック</h2>
