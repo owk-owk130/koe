@@ -68,6 +68,7 @@ const electronAPI: ElectronAPI = {
   // Local history
   listHistory: () => ipcRenderer.invoke(IPC.HISTORY_LIST),
   getHistoryJob: (id) => ipcRenderer.invoke(IPC.HISTORY_GET, id),
+  deleteHistoryJob: (id) => ipcRenderer.invoke(IPC.HISTORY_DELETE, id),
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

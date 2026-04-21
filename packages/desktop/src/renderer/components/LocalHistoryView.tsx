@@ -1,7 +1,11 @@
 import { useState } from "react";
-import { ArrowLeft, History } from "lucide-react";
+import { ArrowLeft, History, Trash2 } from "lucide-react";
 import { formatDate, formatDuration } from "@koe/shared";
-import { useLocalHistory, useLocalJobDetail } from "~/renderer/hooks/useLocalHistory";
+import {
+  useDeleteLocalJob,
+  useLocalHistory,
+  useLocalJobDetail,
+} from "~/renderer/hooks/useLocalHistory";
 
 export function LocalHistoryView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -69,6 +73,8 @@ function LocalHistoryList({ onSelect }: { onSelect: (id: string) => void }) {
 
 function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
   const { data, isLoading, error } = useLocalJobDetail(jobId);
+  const deleteJob = useDeleteLocalJob();
+  const [confirming, setConfirming] = useState(false);
 
   if (isLoading) {
     return <p className="p-6 text-xs text-text-secondary">読み込み中...</p>;
@@ -82,6 +88,15 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
 
   const { job, topics, chunks } = data;
 
+  const handleConfirmDelete = () => {
+    deleteJob.mutate(jobId, {
+      onSuccess: () => {
+        setConfirming(false);
+        onBack();
+      },
+    });
+  };
+
   return (
     <div className="flex flex-1 flex-col gap-5 p-6">
       <button
@@ -92,14 +107,36 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
         履歴一覧に戻る
       </button>
 
-      <div>
-        <h1 className="text-xl font-semibold text-text-primary">{formatDate(job.createdAt)}</h1>
-        {job.audioDurationSec != null && (
-          <p className="mt-1 font-mono text-[11px] text-text-secondary">
-            {formatDuration(job.audioDurationSec)}
-          </p>
-        )}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-text-primary">{formatDate(job.createdAt)}</h1>
+          {job.audioDurationSec != null && (
+            <p className="mt-1 font-mono text-[11px] text-text-secondary">
+              {formatDuration(job.audioDurationSec)}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          className="flex shrink-0 items-center gap-1.5 rounded-[8px] border border-[rgba(0,0,0,0.03)] bg-white px-3 py-1.5 text-xs text-text-secondary hover:border-error/40 hover:text-error"
+        >
+          <Trash2 size={12} />
+          削除
+        </button>
       </div>
+
+      {confirming && (
+        <DeleteConfirmDialog
+          isDeleting={deleteJob.isPending}
+          errorMessage={deleteJob.error?.message ?? null}
+          onCancel={() => {
+            setConfirming(false);
+            deleteJob.reset();
+          }}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
 
       {job.summary && (
         <div className="rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
@@ -161,6 +198,62 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function DeleteConfirmDialog({
+  isDeleting,
+  errorMessage,
+  onCancel,
+  onConfirm,
+}: {
+  isDeleting: boolean;
+  errorMessage: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-history-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-6"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-[12px] bg-white p-5 shadow-xl"
+      >
+        <h2 id="delete-history-title" className="text-[15px] font-semibold text-text-primary">
+          この履歴を削除しますか？
+        </h2>
+        <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+          この履歴を削除します。クラウドに同期済みの場合はサーバー側からも削除されます。
+          この操作は取り消せません。
+        </p>
+        {errorMessage && (
+          <p className="mt-3 rounded-[8px] bg-error/10 p-2 text-xs text-error">{errorMessage}</p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="rounded-[8px] border border-[rgba(0,0,0,0.08)] bg-white px-3 py-1.5 text-xs text-text-primary hover:bg-gray-50 disabled:opacity-50"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="rounded-[8px] bg-error px-3 py-1.5 text-xs font-semibold text-white hover:bg-error/90 disabled:opacity-50"
+          >
+            {isDeleting ? "削除中..." : "削除する"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

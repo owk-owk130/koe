@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { createDatabase, type DatabaseHandle } from "./index";
-import { getLocalJob, listLocalJobs, saveLocalJob, type SaveLocalJobInput } from "./job-store";
+import {
+  deleteLocalJob,
+  getLocalJob,
+  listLocalJobs,
+  saveLocalJob,
+  type SaveLocalJobInput,
+} from "./job-store";
 
 const sampleInput = (overrides: Partial<SaveLocalJobInput> = {}): SaveLocalJobInput => ({
   id: "job-1",
@@ -80,5 +86,44 @@ describe("job-store", () => {
       .prepare("SELECT job_id, status FROM sync_state WHERE job_id = ?")
       .get("job-1") as { job_id: string; status: string } | undefined;
     expect(row?.status).toBe("pending");
+  });
+
+  describe("deleteLocalJob", () => {
+    it("removes the job and every dependent row in a single transaction", () => {
+      saveLocalJob(handle.db, sampleInput({ id: "to-delete" }));
+      saveLocalJob(handle.db, sampleInput({ id: "keep" }));
+
+      const ok = deleteLocalJob(handle.db, "to-delete");
+      expect(ok).toBe(true);
+
+      expect(getLocalJob(handle.db, "to-delete")).toBeNull();
+      const syncRow = handle.db.$client
+        .prepare("SELECT job_id FROM sync_state WHERE job_id = ?")
+        .get("to-delete");
+      expect(syncRow).toBeUndefined();
+
+      // unrelated job + its children remain intact
+      const kept = getLocalJob(handle.db, "keep");
+      expect(kept).not.toBeNull();
+      expect(kept!.topics.length).toBeGreaterThan(0);
+    });
+
+    it("returns false when the job does not exist", () => {
+      expect(deleteLocalJob(handle.db, "missing")).toBe(false);
+    });
+
+    it("exposes the cloud job id before removing it", () => {
+      saveLocalJob(handle.db, sampleInput({ id: "cloud-linked" }));
+      handle.db.$client
+        .prepare("UPDATE sync_state SET status = 'synced', cloud_job_id = ? WHERE job_id = ?")
+        .run("cloud-123", "cloud-linked");
+
+      const cloudJobId = getLocalJob(handle.db, "cloud-linked")
+        ? handle.db.$client
+            .prepare("SELECT cloud_job_id FROM sync_state WHERE job_id = ?")
+            .get("cloud-linked")
+        : null;
+      expect(cloudJobId).toEqual({ cloud_job_id: "cloud-123" });
+    });
   });
 });

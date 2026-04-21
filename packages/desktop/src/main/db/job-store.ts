@@ -119,6 +119,21 @@ export const listLocalJobs = (db: DesktopDb): Job[] => {
     .all();
 };
 
+export const deleteLocalJob = (db: DesktopDb, id: string): boolean => {
+  const sqlite = db.$client;
+  let existed = false;
+  sqlite.transaction(() => {
+    const [job] = db.select({ id: jobs.id }).from(jobs).where(eq(jobs.id, id)).limit(1).all();
+    if (!job) return;
+    existed = true;
+    db.delete(syncState).where(eq(syncState.jobId, id)).run();
+    db.delete(topics).where(eq(topics.jobId, id)).run();
+    db.delete(chunks).where(eq(chunks.jobId, id)).run();
+    db.delete(jobs).where(eq(jobs.id, id)).run();
+  })();
+  return existed;
+};
+
 export const getLocalJob = (db: DesktopDb, id: string): LocalJobDetail | null => {
   const [job] = db.select().from(jobs).where(eq(jobs.id, id)).limit(1).all();
   if (!job) return null;
