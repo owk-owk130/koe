@@ -1,14 +1,16 @@
+import { useState } from "react";
 import { formatDuration } from "@koe/shared";
 import { Mic, Square, RotateCcw, Upload, AppWindow, Settings } from "lucide-react";
 import { useLocalTranscribe } from "~/renderer/hooks/useLocalTranscribe";
 import { useSidecar } from "~/renderer/hooks/useSidecar";
-import { useRecording } from "~/renderer/hooks/useRecording";
+import { useRecording, type AudioSourceMode } from "~/renderer/hooks/useRecording";
 
 export function PopoverView() {
   const mutation = useLocalTranscribe();
   const sidecar = useSidecar();
   const { state, duration, audioBlob, audioUrl, error, startRecording, stopRecording, reset } =
     useRecording();
+  const [mode, setMode] = useState<AudioSourceMode>("mic");
 
   const result = mutation.data;
   const loading = mutation.isPending;
@@ -65,11 +67,30 @@ export function PopoverView() {
         <>
           {/* Recording controls */}
           <div className="shrink-0 border-b border-[rgba(0,0,0,0.06)] px-4 pb-3">
+            {/* Audio source selector */}
+            {state === "idle" && !audioUrl && (
+              <div className="mb-2 flex gap-1">
+                {(["mic", "system", "both"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className={`flex-1 rounded-button px-2 py-1 text-[11px] font-medium ${
+                      mode === m
+                        ? "bg-text-primary text-white"
+                        : "border border-border text-text-primary hover:bg-surface"
+                    }`}
+                  >
+                    {m === "mic" ? "マイク" : m === "system" ? "システム" : "両方"}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="flex items-center gap-2">
               {state === "idle" && !audioUrl && (
                 <>
                   <button
-                    onClick={() => startRecording("mic")}
+                    onClick={() => startRecording(mode)}
                     disabled={loading}
                     className="flex flex-1 items-center justify-center gap-1.5 rounded-button bg-brand px-3 py-2 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
                   >
