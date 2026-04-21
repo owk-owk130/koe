@@ -24,3 +24,19 @@ export const downloadJSON = async <T>(bucket: R2Bucket, key: string): Promise<T 
   if (!obj) return null;
   return obj.json<T>();
 };
+
+// Deletes every object whose key starts with prefix. Paginates through list results
+// so buckets with many chunks are cleared completely. Each page depends on the cursor
+// from the previous one, so the awaits are sequential by design.
+export const deleteByPrefix = async (bucket: R2Bucket, prefix: string): Promise<void> => {
+  let cursor: string | undefined;
+  do {
+    // oxlint-disable-next-line no-await-in-loop
+    const listed = await bucket.list({ prefix, cursor });
+    if (listed.objects.length > 0) {
+      // oxlint-disable-next-line no-await-in-loop
+      await bucket.delete(listed.objects.map((o) => o.key));
+    }
+    cursor = listed.truncated ? listed.cursor : undefined;
+  } while (cursor);
+};

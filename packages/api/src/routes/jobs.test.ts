@@ -132,3 +132,89 @@ describe("GET /api/v1/jobs/:id/topics", () => {
     expect(body.topics[0].title).toBe("Topic A");
   });
 });
+
+describe("DELETE /api/v1/jobs/:id", () => {
+  it("returns 401 without auth", async () => {
+    const res = await app.request("/api/v1/jobs/some-id", { method: "DELETE" }, makeEnv());
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 for a non-existent job", async () => {
+    const res = await app.request(
+      "/api/v1/jobs/does-not-exist",
+      { method: "DELETE", headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("deletes the job, its topics, and R2 objects", async () => {
+    const form = new FormData();
+    form.append("audio", new File([new Uint8Array([1, 2, 3])], "del.mp3"));
+    const createRes = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    const { id: jobId } = await createRes.json<{ id: string }>();
+    const audioKey = `jobs-user-1/audio/${jobId}/original.mp3`;
+    const resultKey = `jobs-user-1/results/${jobId}/transcript.json`;
+
+    // Seed topic + a result JSON so we can verify both prefixes are purged.
+    await createTopics(env.DB, jobId, [
+      {
+        id: crypto.randomUUID(),
+        topicIndex: 0,
+        title: "to delete",
+        transcript: "body",
+      },
+    ]);
+    await env.BUCKET.put(resultKey, JSON.stringify({ text: "t" }));
+
+    // Pre-conditions
+    expect(await env.BUCKET.get(audioKey)).not.toBeNull();
+    expect(await env.BUCKET.get(resultKey)).not.toBeNull();
+
+    const res = await app.request(
+      `/api/v1/jobs/${jobId}`,
+      { method: "DELETE", headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(204);
+
+    // Job is gone
+    const getRes = await app.request(
+      `/api/v1/jobs/${jobId}`,
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(getRes.status).toBe(404);
+
+    // R2 objects are gone
+    expect(await env.BUCKET.get(audioKey)).toBeNull();
+    expect(await env.BUCKET.get(resultKey)).toBeNull();
+  });
+
+  it("returns 404 when deleting another user's job", async () => {
+    await createUser(env.DB, {
+      id: "jobs-user-other",
+      googleId: "g-jobs-other",
+      email: "other@test.com",
+      name: "Other",
+    });
+    await env.DB.prepare("INSERT INTO jobs (id, user_id, audio_key) VALUES (?, ?, ?)")
+      .bind("other-job", "jobs-user-other", "jobs-user-other/audio/other-job/original.mp3")
+      .run();
+
+    const res = await app.request(
+      "/api/v1/jobs/other-job",
+      { method: "DELETE", headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+
+    // still there
+    const rows = await env.DB.prepare("SELECT id FROM jobs WHERE id = ?").bind("other-job").all();
+    expect(rows.results.length).toBe(1);
+  });
+});

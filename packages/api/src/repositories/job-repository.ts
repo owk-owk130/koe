@@ -1,4 +1,4 @@
-import { jobs, topics } from "@koe/shared/db";
+import { chunks, jobs, topics } from "@koe/shared/db";
 import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import { getDb } from "~/lib/db";
 
@@ -154,6 +154,27 @@ export const createCompletedJob = async (
 export const findTopicsByJob = async (d1: D1Database, jobId: string): Promise<Topic[]> => {
   const db = getDb(d1);
   return db.select().from(topics).where(eq(topics.jobId, jobId)).orderBy(asc(topics.topicIndex));
+};
+
+// Deletes the job and its dependent rows (topics, chunks) only when the caller owns it.
+// Returns true if the job existed and belonged to userId; false otherwise.
+export const deleteJob = async (
+  d1: D1Database,
+  jobId: string,
+  userId: string,
+): Promise<boolean> => {
+  const db = getDb(d1);
+  const [existing] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.id, jobId), eq(jobs.userId, userId)))
+    .limit(1);
+  if (!existing) return false;
+
+  await db.delete(topics).where(eq(topics.jobId, jobId));
+  await db.delete(chunks).where(eq(chunks.jobId, jobId));
+  await db.delete(jobs).where(eq(jobs.id, jobId));
+  return true;
 };
 
 // SQLite's LIKE does not honor escape sequences unless an ESCAPE clause is attached,
