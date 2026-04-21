@@ -25,6 +25,7 @@ import type {
 import { createTray, updateTrayState } from "./tray";
 import { closeDesktopDatabase, getDesktopDatabase, initDesktopDatabase } from "./db";
 import { getLocalJob, listLocalJobs, saveLocalJob } from "./db/job-store";
+import { deleteJobEverywhere } from "./sync/deleter";
 import { syncPendingJobs } from "./sync/syncer";
 import {
   getSettings,
@@ -290,6 +291,15 @@ ipcMain.handle(IPC.HISTORY_LIST, (): LocalJobSummary[] => {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }));
+});
+
+ipcMain.handle(IPC.HISTORY_DELETE, async (_, id: string): Promise<void> => {
+  const { db } = getDesktopDatabase();
+  await deleteJobEverywhere(db, id, {
+    fetch: globalThis.fetch,
+    apiUrl: API_URL,
+    getToken: getActiveToken,
+  });
 });
 
 ipcMain.handle(IPC.HISTORY_GET, (_, id: string): LocalJobDetailPayload | null => {

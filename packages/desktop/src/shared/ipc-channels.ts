@@ -54,6 +54,7 @@ export const IPC = {
   // Local history (SQLite-backed)
   HISTORY_LIST: "history:list",
   HISTORY_GET: "history:get",
+  HISTORY_DELETE: "history:delete",
 } as const;
 
 // ---- Payload types ----
@@ -220,4 +221,5 @@ export interface ElectronAPI {
   // Local history
   listHistory: () => Promise<LocalJobSummary[]>;
   getHistoryJob: (id: string) => Promise<LocalJobDetailPayload | null>;
+  deleteHistoryJob: (id: string) => Promise<void>;
 }

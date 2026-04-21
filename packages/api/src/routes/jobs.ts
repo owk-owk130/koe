@@ -5,12 +5,13 @@ import { validate } from "~/lib/validation";
 import { requireAuth } from "~/middleware/auth";
 import {
   createJob,
+  deleteJob,
   findJobById,
   findTopicsByJob,
   listJobsByUser,
 } from "~/repositories/job-repository";
 import { enqueueJob } from "~/services/container-service";
-import { uploadAudio } from "~/services/r2-storage";
+import { deleteByPrefix, uploadAudio } from "~/services/r2-storage";
 import type { Env } from "~/types";
 
 const audioFormSchema = z.object({
@@ -104,6 +105,26 @@ const jobs = new Hono<Env>()
       created_at: job.createdAt,
       updated_at: job.updatedAt,
     });
+  })
+  .delete("/:id", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    const jobId = c.req.param("id");
+
+    const job = await findJobById(c.env.DB, jobId);
+    if (!job || job.userId !== user.id) {
+      throw new AppError(404, "NOT_FOUND", "Job not found");
+    }
+
+    // R2 first: if D1 delete succeeds but R2 fails, orphans would remain silently.
+    // Doing R2 first means a failure surfaces as a 500 and the client can retry
+    // — the D1 row still points the user at the same job to delete again.
+    await deleteByPrefix(c.env.BUCKET, `${user.id}/audio/${jobId}/`);
+    await deleteByPrefix(c.env.BUCKET, `${user.id}/results/${jobId}/`);
+
+    await deleteJob(c.env.DB, jobId, user.id);
+
+    return c.body(null, 204);
   })
   .get("/:id/topics", async (c) => {
     const user = c.get("user");

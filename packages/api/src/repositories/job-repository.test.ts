@@ -1,12 +1,14 @@
 import { env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { setupD1 } from "~/test-helpers";
+import { createChunks, findChunksByJob } from "./chunk-repository";
 import {
   claimJobForProcessing,
   completeJob,
   createCompletedJob,
   createJob,
   createTopics,
+  deleteJob,
   findJobById,
   findTopicsByJob,
   listJobsByUser,
@@ -312,6 +314,59 @@ describe("job-repository", () => {
         query: "zzz-no-match-here",
       });
       expect(results).toEqual([]);
+    });
+  });
+
+  describe("deleteJob", () => {
+    it("removes the job, its topics, and its chunks", async () => {
+      await createJob(env.DB, {
+        id: "del-job-1",
+        userId: "u1",
+        audioKey: "u1/audio/del-job-1/original.mp3",
+      });
+      await createTopics(env.DB, "del-job-1", [
+        {
+          id: "del-topic-1",
+          topicIndex: 0,
+          title: "to be removed",
+          transcript: "body",
+        },
+      ]);
+      await createChunks(env.DB, "del-job-1", [
+        {
+          id: "del-chunk-1",
+          chunkIndex: 0,
+          audioKey: "u1/audio/del-job-1/chunks/0.mp3",
+          startSec: 0,
+          endSec: 10,
+        },
+      ]);
+
+      const deleted = await deleteJob(env.DB, "del-job-1", "u1");
+      expect(deleted).toBe(true);
+
+      expect(await findJobById(env.DB, "del-job-1")).toBeNull();
+      expect(await findTopicsByJob(env.DB, "del-job-1")).toEqual([]);
+      expect(await findChunksByJob(env.DB, "del-job-1")).toEqual([]);
+    });
+
+    it("does not delete a job owned by another user", async () => {
+      await createJob(env.DB, {
+        id: "del-job-other",
+        userId: "u2",
+        audioKey: "u2/audio/del-job-other/original.mp3",
+      });
+
+      const deleted = await deleteJob(env.DB, "del-job-other", "u1");
+      expect(deleted).toBe(false);
+
+      const still = await findJobById(env.DB, "del-job-other");
+      expect(still).not.toBeNull();
+    });
+
+    it("returns false for a non-existent job", async () => {
+      const deleted = await deleteJob(env.DB, "does-not-exist", "u1");
+      expect(deleted).toBe(false);
     });
   });
 });
