@@ -2,7 +2,7 @@
 
 capture voice and shape it into structured thoughts.
 
-音声をテキストに文字起こしし、トピックごとに分割する API + MCP サーバー。
+音声をテキストに文字起こしし、トピックごとに分割するデスクトップアプリ + API + MCP サーバー。
 
 利用者向けのセットアップ・使い方ガイド → [USECASES.md](./USECASES.md)
 
@@ -10,21 +10,18 @@ capture voice and shape it into structured thoughts.
 
 ```
 Desktop App (Electron + React)
-    ├── ローカル処理パス
-    │     main process ── Go sidecar (cmd/sidecar)
-    │                       ├── ffmpeg 音声分割
-    │                       ├── Whisper 文字起こし
-    │                       └── Gemini トピック分割
-    └── サーバー同期パス（要認証、optional）
-          ▼
-Workers (Hono/TS) ── API / 認証 / 同期
-    │                   ├── R2 (テキスト結果)
+    ├─ 録音 (MediaRecorder)
+    ├─ ジョブ作成 (multipart form)
+    └─ ジョブポーリング
+         ▼
+Workers (Hono/TS) ── API / 認証 (すべて requireAuth)
+    │                   ├── R2 (音声 + 結果 JSON)
     │                   └── D1 (ジョブ/トピックのメタ情報)
-    ▼ DurableObject (KoeProcessor)
-Workers Containers (Go HTTP :8080) ── Web版用
+    ▼ DurableObject (KoeProcessor) ── alarm 非同期
+Workers Containers (Go HTTP :8080) ── 音声処理
     ├── ffmpeg 音声分割
     ├── Whisper (Workers AI)
-    └── Gemini (トピック分割)
+    └── Gemini トピック分割
 ```
 
 ## Project Structure
@@ -32,17 +29,16 @@ Workers Containers (Go HTTP :8080) ── Web版用
 ```
 packages/
 ├── api/       # Cloudflare Workers + Hono (TypeScript)
-├── worker/    # Go - 音声処理 (server / sidecar / cli / mcp)
+├── worker/    # Go - 音声処理 (Workers Containers)
 ├── shared/    # 共有ユーティリティ (format / auth / API client)
 └── desktop/   # Electron デスクトップアプリ
 ```
 
 ## Prerequisites
 
-- [Go](https://go.dev/) 1.26+
+- [Go](https://go.dev/) 1.26+ (Workers Containers のビルドに使用)
 - [Node.js](https://nodejs.org/) 24+
 - [pnpm](https://pnpm.io/) 10+
-- [ffmpeg](https://ffmpeg.org/) (音声分割に使用)
 - [Cloudflare account](https://dash.cloudflare.com/) (デプロイ時)
 
 ## Setup
@@ -54,10 +50,6 @@ cd koe
 
 # install dependencies
 pnpm install
-
-# build Go worker
-cd packages/worker
-go build ./...
 ```
 
 ## Development
@@ -74,18 +66,7 @@ pnpm dev:api
 pnpm dev:desktop
 ```
 
-### Go CLI
-
-```bash
-cd packages/worker
-go run ./cmd/cli <audio-file.mp3>
-```
-
-### MCP Server
-
-koe は 2 種類の MCP サーバーを提供する。
-
-#### Hono (Cloudflare Workers) 版 — リモート MCP
+### MCP Server (リモート)
 
 認証済みユーザーが自分の音声アーカイブ（ジョブ／トピック）を Claude Desktop / モバイルアプリから
 検索・参照するためのリモート MCP。Workers API に `/mcp` として同居する（Streamable HTTP transport）。
@@ -114,35 +95,6 @@ Claude Desktop 設定例:
 
 JWT は `/auth/device` → `/auth/token` の Device Flow で発行する。
 
-#### Go (stdio) 版 — ローカル MCP
-
-手元の音声ファイルをそのまま文字起こし／トピック分割する用途。認証不要。
-
-```bash
-cd packages/worker
-go run ./cmd/mcp
-```
-
-MCP 設定例:
-
-```json
-{
-  "mcpServers": {
-    "koe-local": {
-      "command": "go",
-      "args": ["run", "./cmd/mcp"],
-      "cwd": "/path/to/koe/packages/worker",
-      "env": {
-        "WHISPER_BASE_URL": "https://api.cloudflare.com/client/v4/accounts/{your-account-id}/ai",
-        "WHISPER_API_KEY": "your-cloudflare-api-token",
-        "WHISPER_MODEL": "@cf/openai/whisper-large-v3-turbo",
-        "GEMINI_API_KEY": "your-gemini-api-key"
-      }
-    }
-  }
-}
-```
-
 ### Deploy
 
 ```bash
@@ -151,16 +103,6 @@ pnpm deploy:api
 ```
 
 ## Environment Variables
-
-### Go Worker (CLI / MCP)
-
-| Variable           | Required           | Description                                                                    |
-| ------------------ | ------------------ | ------------------------------------------------------------------------------ |
-| `WHISPER_BASE_URL` | Yes                | Cloudflare Workers AI: `https://api.cloudflare.com/client/v4/accounts/{id}/ai` |
-| `WHISPER_API_KEY`  | Yes                | Cloudflare API token (Workers AI 権限)                                         |
-| `WHISPER_MODEL`    | Yes                | モデル名 (推奨: `@cf/openai/whisper-large-v3-turbo`)                           |
-| `GEMINI_API_KEY`   | CLI: Yes / MCP: No | Gemini API key (トピック分割、MCP では任意)                                    |
-| `GEMINI_MODEL`     | No                 | Gemini model name (default: `gemini-2.0-flash-lite`)                           |
 
 ### Workers API
 

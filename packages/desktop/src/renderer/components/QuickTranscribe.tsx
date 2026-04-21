@@ -1,58 +1,43 @@
+import { useEffect, useState } from "react";
 import { formatDuration } from "@koe/shared";
 import { RecordingPanel } from "./RecordingPanel";
-import { Settings } from "lucide-react";
-import { useLocalTranscribe } from "~/renderer/hooks/useLocalTranscribe";
-import { useSidecar } from "~/renderer/hooks/useSidecar";
+import { useCreateJob, useJob, useJobTopics } from "~/renderer/hooks/useJobs";
 
-interface QuickTranscribeProps {
-  onNavigateSettings?: () => void;
-}
+export function QuickTranscribe() {
+  const createJob = useCreateJob();
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
-export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
-  const mutation = useLocalTranscribe();
-  const sidecar = useSidecar();
+  const jobQuery = useJob(currentJobId);
+  const job = jobQuery.data;
+  const isCompleted = job?.status === "completed";
+  const topicsQuery = useJobTopics(currentJobId, isCompleted);
 
-  const result = mutation.data;
-  const loading = mutation.isPending;
-  const error = mutation.error?.message ?? null;
-  const notReady = sidecar.status !== "ready";
+  // Reset current job if creation is retried
+  useEffect(() => {
+    if (createJob.isPending) setCurrentJobId(null);
+  }, [createJob.isPending]);
+
+  const uploading = createJob.isPending;
+  const processing = job?.status === "pending" || job?.status === "processing";
+  const failed = job?.status === "failed";
+  const loading = uploading || processing;
 
   const transcribeBlob = async (blob: Blob) => {
     const filename = `quick-${Date.now()}.webm`;
-    const filePath = await window.electronAPI.saveRecording(await blob.arrayBuffer(), filename);
-    mutation.mutate(filePath);
+    const result = await createJob.mutateAsync({ blob, filename });
+    setCurrentJobId(result.id);
   };
 
   const transcribeFile = async () => {
     const fileInfo = await window.electronAPI.selectAudioFile();
     if (!fileInfo) return;
-    mutation.mutate(fileInfo.path);
+    const buffer = await window.electronAPI.readFile(fileInfo.path);
+    const blob = new Blob([buffer], { type: "audio/mpeg" });
+    const result = await createJob.mutateAsync({ blob, filename: fileInfo.name });
+    setCurrentJobId(result.id);
   };
 
-  if (notReady) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface">
-          <Settings size={24} className="text-text-secondary" />
-        </div>
-        <p className="text-[15px] font-semibold text-text-primary">APIキーの設定が必要です</p>
-        <p className="text-center text-[13px] leading-relaxed text-text-secondary">
-          文字起こしを使うには、設定画面で
-          <br />
-          Whisper APIキーを入力してください
-        </p>
-        {onNavigateSettings && (
-          <button
-            onClick={onNavigateSettings}
-            className="flex items-center gap-1.5 rounded-button bg-text-primary px-4 py-2 text-xs font-medium text-white hover:opacity-90"
-          >
-            <Settings size={13} />
-            設定を開く
-          </button>
-        )}
-      </div>
-    );
-  }
+  const error = createJob.error?.message ?? jobQuery.error?.message ?? job?.error ?? null;
 
   return (
     <div className="flex flex-1 flex-col gap-5 p-6">
@@ -65,7 +50,7 @@ export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
           onRecordingComplete={transcribeBlob}
           onFileSelect={transcribeFile}
           fileSelectDisabled={loading}
-          transcribing={loading || !!result}
+          transcribing={loading || isCompleted}
         />
       </div>
 
@@ -74,58 +59,65 @@ export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
         {loading && (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white">
             <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-brand border-t-transparent" />
-            <p className="text-[13px] font-medium text-text-primary">文字起こし中...</p>
+            <p className="text-[13px] font-medium text-text-primary">
+              {uploading ? "アップロード中..." : "文字起こし中..."}
+            </p>
           </div>
         )}
 
         {error && <p className="text-xs text-error">{error}</p>}
+        {failed && !error && (
+          <p className="text-xs text-error">ジョブが失敗しました。もう一度お試しください。</p>
+        )}
 
-        {result && (
+        {isCompleted && job && (
           <>
             <div className="flex items-center justify-between">
               <h2 className="text-[15px] font-semibold text-text-primary">トランスクリプト</h2>
               <p className="text-xs text-text-secondary">履歴に保存しました</p>
             </div>
-            <div className="rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
-              <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-text-primary">
-                {result.transcript.text}
-              </p>
-            </div>
 
-            {result.summary && (
+            {job.summary && (
               <>
                 <h2 className="text-[15px] font-semibold text-text-primary">概要</h2>
                 <div className="rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-[#f8f8f8] p-4">
-                  <p className="text-[13px] leading-relaxed text-text-secondary">
-                    {result.summary}
-                  </p>
+                  <p className="text-[13px] leading-relaxed text-text-secondary">{job.summary}</p>
                 </div>
               </>
             )}
 
-            {result.topics.length > 0 && (
+            {topicsQuery.data && topicsQuery.data.topics.length > 0 && (
               <>
                 <h2 className="text-[15px] font-semibold text-text-primary">トピック</h2>
                 <div className="space-y-2.5">
-                  {result.topics.map((topic, i) => (
+                  {topicsQuery.data.topics.map((topic) => (
                     <div
-                      key={i}
+                      key={topic.id}
                       className="rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4"
                     >
                       <div className="flex items-start justify-between">
                         <h4 className="text-[13px] font-semibold text-text-primary">
                           {topic.title}
                         </h4>
-                        <span className="shrink-0 font-mono text-[11px] text-text-secondary">
-                          {formatDuration(topic.start_sec)} - {formatDuration(topic.end_sec)}
-                        </span>
+                        {topic.start_sec !== null && topic.end_sec !== null && (
+                          <span className="shrink-0 font-mono text-[11px] text-text-secondary">
+                            {formatDuration(topic.start_sec)} - {formatDuration(topic.end_sec)}
+                          </span>
+                        )}
                       </div>
-                      <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-                        {topic.summary}
-                      </p>
+                      {topic.summary && (
+                        <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                          {topic.summary}
+                        </p>
+                      )}
                       {topic.detail && (
                         <p className="mt-2 text-xs leading-relaxed text-text-primary">
                           {topic.detail}
+                        </p>
+                      )}
+                      {topic.transcript && (
+                        <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-text-primary">
+                          {topic.transcript}
                         </p>
                       )}
                     </div>
@@ -136,7 +128,7 @@ export function QuickTranscribe({ onNavigateSettings }: QuickTranscribeProps) {
           </>
         )}
 
-        {!loading && !error && !result && (
+        {!loading && !error && !isCompleted && !failed && (
           <div className="flex flex-1 items-center justify-center rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white">
             <p className="text-[13px] text-text-secondary">
               録音またはファイルを選択して文字起こしを開始

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Mic } from "lucide-react";
 import { createClient } from "@koe/shared";
+import { API_URL } from "~/renderer/lib/api";
 import { useAuth } from "~/renderer/hooks/useAuth";
 
-const API_URL = "http://localhost:8787";
 const client = createClient(API_URL);
 
 type FlowState = "idle" | "polling" | "success" | "error";

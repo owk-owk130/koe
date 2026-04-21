@@ -6,12 +6,6 @@ directories:
 files:
   - out/**/*
 extraResources:
-  - from: "../worker/dist/koe-sidecar-darwin-${arch}"
-    to: "sidecar/koe-sidecar"
-  - from: "build/ffmpeg"
-    to: "ffmpeg"
-    filter:
-      - "**/*"
   - from: "build/trayIconTemplate.png"
     to: "trayIconTemplate.png"
   - from: "build/trayIconTemplate@2x.png"

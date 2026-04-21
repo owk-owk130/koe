@@ -110,8 +110,6 @@ aside w-60 flex-col border-r border-r-[rgba(0,0,0,0.03)] bg-white
 - ロゴ: `Mic` アイコン + "koe" テキスト
 - ナビ項目（アクティブ）: `bg-surface font-medium text-text-primary rounded-md`
 - ナビ項目（非アクティブ）: `text-text-secondary hover:bg-surface/50`
-- ジョブリスト: ファイル名 + ステータスラベルの2行表示
-- 選択中ジョブ: `bg-brand/[0.08]` + `text-brand`
 - ユーザー: アバター + メール + ログアウトボタン（border-t で区切り）
 
 ### ツールバー
