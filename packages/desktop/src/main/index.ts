@@ -23,6 +23,7 @@ import type {
   LocalProcessResult,
 } from "~/shared/ipc-channels";
 import { createTray, updateTrayState } from "./tray";
+import { createPopoverWindow, togglePopover, getPopoverWindow } from "./popover";
 import { closeDesktopDatabase, getDesktopDatabase, initDesktopDatabase } from "./db";
 import { getLocalJob, listLocalJobs, saveLocalJob } from "./db/job-store";
 import { deleteJobEverywhere } from "./sync/deleter";
@@ -152,8 +153,14 @@ ipcMain.handle(IPC.AUDIO_REQUEST_MIC_PERMISSION, () => {
 
 // ---- Recording IPC ----
 
-ipcMain.handle(IPC.RECORDING_STATE_CHANGED, (_, state: string) => {
-  updateTrayState(state as import("../shared/ipc-channels").RecordingState, mainWindow);
+ipcMain.handle(IPC.RECORDING_STATE_CHANGED, (event, state: string) => {
+  const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+  updateTrayState(
+    state as import("../shared/ipc-channels").RecordingState,
+    mainWindow,
+    getPopoverWindow(),
+    sourceWindow,
+  );
 });
 
 ipcMain.handle(IPC.RECORDING_SAVE, async (_, buffer: ArrayBuffer, filename: string) => {
@@ -164,9 +171,10 @@ ipcMain.handle(IPC.RECORDING_SAVE, async (_, buffer: ArrayBuffer, filename: stri
 
 // ---- File system IPC ----
 
-ipcMain.handle(IPC.FS_SAVE_AUDIO_FILE, async (_, buffer: ArrayBuffer, defaultName: string) => {
-  if (!mainWindow) return false;
-  const result = await dialog.showSaveDialog(mainWindow, {
+ipcMain.handle(IPC.FS_SAVE_AUDIO_FILE, async (event, buffer: ArrayBuffer, defaultName: string) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+  if (!parentWindow) return false;
+  const result = await dialog.showSaveDialog(parentWindow, {
     defaultPath: defaultName,
     filters: [{ name: "Audio", extensions: ["webm"] }],
   });
@@ -175,9 +183,10 @@ ipcMain.handle(IPC.FS_SAVE_AUDIO_FILE, async (_, buffer: ArrayBuffer, defaultNam
   return true;
 });
 
-ipcMain.handle(IPC.FS_SELECT_AUDIO_FILE, async () => {
-  if (!mainWindow) return null;
-  const result = await dialog.showOpenDialog(mainWindow, {
+ipcMain.handle(IPC.FS_SELECT_AUDIO_FILE, async (event) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+  if (!parentWindow) return null;
+  const result = await dialog.showOpenDialog(parentWindow, {
     filters: [{ name: "Audio", extensions: ["mp3", "wav", "m4a", "ogg", "flac", "webm"] }],
     properties: ["openFile"],
   });
@@ -216,6 +225,16 @@ ipcMain.handle(IPC.APP_OPEN_SCREEN_RECORDING_SETTINGS, () =>
     "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
   ),
 );
+
+// ---- Popover IPC ----
+
+ipcMain.handle(IPC.POPOVER_OPEN_MAIN_WINDOW, () => {
+  if (mainWindow) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  getPopoverWindow()?.hide();
+});
 
 // ---- Upload IPC (stub — full implementation in Step 9) ----
 
@@ -365,11 +384,13 @@ if (!gotLock) {
     }
 
     createWindow();
-    createTray(mainWindow);
+    const popoverWindow = createPopoverWindow();
+    createTray({ mainWindow, popoverWindow, togglePopover });
 
     // Notify renderer of sidecar status changes
     setOnStateChange((state) => {
       mainWindow?.webContents.send(IPC.SIDECAR_STATUS_CHANGED, state);
+      getPopoverWindow()?.webContents.send(IPC.SIDECAR_STATUS_CHANGED, state);
     });
 
     // Auto-start sidecar if configured
