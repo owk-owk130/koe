@@ -45,6 +45,9 @@ const electronAPI: ElectronAPI = {
   // Upload
   multipartUpload: (filePath, token) => ipcRenderer.invoke(IPC.UPLOAD_MULTIPART, filePath, token),
 
+  // Popover
+  openMainWindow: () => ipcRenderer.invoke(IPC.POPOVER_OPEN_MAIN_WINDOW),
+
   // Settings
   getSettings: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
   saveSettings: (settings) => ipcRenderer.invoke(IPC.SETTINGS_SAVE, settings),

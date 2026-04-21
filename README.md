@@ -4,6 +4,8 @@ capture voice and shape it into structured thoughts.
 
 音声をテキストに文字起こしし、トピックごとに分割する API + MCP サーバー。
 
+利用者向けのセットアップ・使い方ガイド → [USECASES.md](./USECASES.md)
+
 ## Architecture
 
 ```

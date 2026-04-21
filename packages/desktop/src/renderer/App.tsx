@@ -6,6 +6,7 @@ import { Sidebar } from "./components/Sidebar";
 import { QuickTranscribe } from "./components/QuickTranscribe";
 import { LocalHistoryView } from "./components/LocalHistoryView";
 import { SettingsPanel } from "./components/SettingsPanel";
+import { PopoverView } from "./components/PopoverView";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -64,12 +65,12 @@ function AppContent() {
   );
 }
 
+const isPopover = new URLSearchParams(window.location.search).get("mode") === "popover";
+
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <AuthProvider>{isPopover ? <PopoverView /> : <AppContent />}</AuthProvider>
     </QueryClientProvider>
   );
 }

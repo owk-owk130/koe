@@ -17,6 +17,9 @@ export const IPC = {
   TRAY_TOGGLE_RECORDING: "tray:toggle-recording",
   TRAY_OPEN_WINDOW: "tray:open-window",
 
+  // Popover
+  POPOVER_OPEN_MAIN_WINDOW: "popover:open-main-window",
+
   // File system
   FS_SELECT_AUDIO_FILE: "fs:select-audio-file",
   FS_SAVE_AUDIO_FILE: "fs:save-audio-file",
@@ -202,6 +205,9 @@ export interface ElectronAPI {
 
   // Upload
   multipartUpload: (filePath: string, token: string) => Promise<UploadResult>;
+
+  // Popover
+  openMainWindow: () => Promise<void>;
 
   // Settings
   getSettings: () => Promise<AppSettings>;
