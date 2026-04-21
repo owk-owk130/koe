@@ -101,9 +101,9 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
     <div className="flex flex-1 flex-col gap-5 p-6">
       <button
         onClick={onBack}
-        className="flex w-fit items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary"
+        className="flex w-fit items-center gap-1.5 rounded-[8px] border border-[rgba(0,0,0,0.06)] bg-white px-3 py-1.5 text-[13px] font-medium text-text-primary shadow-sm hover:border-brand/40 hover:text-brand"
       >
-        <ArrowLeft size={12} />
+        <ArrowLeft size={14} />
         履歴一覧に戻る
       </button>
 
