@@ -164,7 +164,7 @@ export class KoeProcessor extends DurableObject<Bindings> {
     });
   }
 
-  private async ensureContainer(): Promise<void> {
+  private async ensureContainerReady(): Promise<void> {
     const container = this.ctx.container;
     if (!container) throw new Error("container not available");
 
@@ -179,12 +179,33 @@ export class KoeProcessor extends DurableObject<Bindings> {
           GEMINI_MODEL: this.env.GEMINI_MODEL ?? "gemini-2.0-flash-lite",
         },
       });
-      await container.monitor();
     }
+
+    // `start()` is non-blocking — the Go HTTP server inside the container may
+    // not be listening on :8080 yet. Poll /health until it responds or a
+    // startup budget expires. Using the actual port the DO will forward to
+    // ensures any proxy wiring is also in place before we stream the audio.
+    const port = container.getTcpPort(8080);
+    const deadline = Date.now() + 30_000;
+    let lastError: unknown;
+    while (Date.now() < deadline) {
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- readiness polling is sequential by design
+        const res = await port.fetch(new Request("http://container/health"));
+        if (res.ok) return;
+        lastError = new Error(`health status ${res.status}`);
+      } catch (err) {
+        lastError = err;
+      }
+      // oxlint-disable-next-line no-await-in-loop -- readiness polling is sequential by design
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    const message = lastError instanceof Error ? lastError.message : String(lastError);
+    throw new Error(`container not ready within 30s: ${message}`);
   }
 
   private async forwardToContainer(request: Request): Promise<Response> {
-    await this.ensureContainer();
+    await this.ensureContainerReady();
     return this.ctx.container!.getTcpPort(8080).fetch(request);
   }
 }

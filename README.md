@@ -66,6 +66,16 @@ pnpm dev:api
 pnpm dev:desktop
 ```
 
+### Docker コンテナの掃除 (dev 用)
+
+`wrangler dev` は Workers Containers をローカルの Docker で起動する。ジョブごとに
+koeprocessor コンテナが立ち上がり、`wrangler` 停止後も滞留することがあるので、必要に
+応じて掃除する:
+
+```bash
+docker ps --filter "ancestor=cloudflare-dev/koeprocessor" -q | xargs -r docker rm -f
+```
+
 ### MCP Server (リモート)
 
 認証済みユーザーが自分の音声アーカイブ（ジョブ／トピック）を Claude Desktop / モバイルアプリから

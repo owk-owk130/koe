@@ -49,7 +49,7 @@ export const exchangeDeviceCode = async (
   clientId: string,
   clientSecret: string,
   deviceCode: string,
-): Promise<GoogleTokenResponse | "pending" | "expired"> => {
+): Promise<GoogleTokenResponse | "pending" | "slow_down" | "expired"> => {
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -64,6 +64,7 @@ export const exchangeDeviceCode = async (
   if (!res.ok) {
     const body = await res.json<{ error: string }>();
     if (body.error === "authorization_pending") return "pending";
+    if (body.error === "slow_down") return "slow_down";
     if (body.error === "expired_token") return "expired";
     throw new Error(`Google token exchange failed: ${body.error}`);
   }
