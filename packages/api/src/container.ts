@@ -60,6 +60,20 @@ export class KoeProcessor extends Container<Bindings> {
     };
   }
 
+  // The Container base class uses HTTP inflight counters to decide when the
+  // container is idle, but a single long-running audio-processing request can
+  // outlive that tracking and trigger sleepAfter while the pipeline is still
+  // working. As long as we still hold a job in storage, keep the container
+  // alive; otherwise fall back to the default stop behaviour.
+  override async onActivityExpired(): Promise<void> {
+    const job = await this.ctx.storage.get("job");
+    if (job) {
+      this.renewActivityTimeout();
+      return;
+    }
+    await this.stop();
+  }
+
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
