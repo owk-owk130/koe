@@ -8,16 +8,16 @@ export interface JobSummary {
   id: string;
   status: JobStatus;
   audio_key: string;
+  audio_duration_sec: number | null;
+  summary: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface JobDetail extends JobSummary {
-  audio_duration_sec: number | null;
   total_chunks: number | null;
   completed_chunks: number | null;
   error: string | null;
-  summary: string | null;
 }
 
 export interface JobTopic {

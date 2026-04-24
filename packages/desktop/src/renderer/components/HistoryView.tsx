@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowLeft, History, Trash2 } from "lucide-react";
 import { formatDate, formatDuration } from "@koe/shared";
 import { useDeleteJob, useJob, useJobTopics, useJobs } from "~/renderer/hooks/useJobs";
+import { StatusBadge } from "./StatusBadge";
 
 export function HistoryView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -42,16 +43,26 @@ function JobList({ onSelect }: { onSelect: (id: string) => void }) {
             <button
               key={job.id}
               onClick={() => onSelect(job.id)}
-              className="flex w-full flex-col gap-1 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4 text-left hover:border-brand/30"
+              className="flex w-full flex-col gap-1.5 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4 text-left hover:border-brand/30"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <span className="truncate text-[13px] font-semibold text-text-primary">
                   {formatDate(job.created_at)}
                 </span>
-                <span className="shrink-0 rounded-badge bg-surface px-2 py-0.5 text-[10px] font-medium text-text-secondary">
-                  {job.status}
-                </span>
+                <div className="flex shrink-0 items-center gap-2">
+                  {job.audio_duration_sec != null && (
+                    <span className="font-mono text-[11px] text-text-secondary">
+                      {formatDuration(job.audio_duration_sec)}
+                    </span>
+                  )}
+                  <StatusBadge status={job.status} />
+                </div>
               </div>
+              {job.summary && (
+                <p className="line-clamp-2 text-xs leading-relaxed text-text-secondary">
+                  {job.summary}
+                </p>
+              )}
             </button>
           ))}
         </div>
@@ -101,12 +112,14 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-text-primary">{formatDate(job.created_at)}</h1>
-          {job.audio_duration_sec != null && (
-            <p className="mt-1 font-mono text-[11px] text-text-secondary">
-              {formatDuration(job.audio_duration_sec)}
-            </p>
-          )}
-          <p className="mt-1 text-[11px] text-text-secondary">ステータス: {job.status}</p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <StatusBadge status={job.status} />
+            {job.audio_duration_sec != null && (
+              <span className="font-mono text-[11px] text-text-secondary">
+                {formatDuration(job.audio_duration_sec)}
+              </span>
+            )}
+          </div>
         </div>
         <button
           type="button"
