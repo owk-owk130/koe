@@ -1,4 +1,5 @@
-import { DurableObject } from "cloudflare:workers";
+import { Container } from "@cloudflare/containers";
+import type { DurableObject } from "cloudflare:workers";
 import { createChunks } from "./repositories/chunk-repository";
 import {
   claimJobForProcessing,
@@ -41,25 +42,55 @@ export type ProcessResult = {
 
 const MAX_RETRIES = 3;
 
-export class KoeProcessor extends DurableObject<Bindings> {
-  async fetch(request: Request): Promise<Response> {
+// Wraps the Go audio-processing server (packages/worker). The Container base
+// class handles start/stop, port readiness, and idle sleep — we only implement
+// the job orchestration (claim → forward → persist → complete).
+export class KoeProcessor extends Container<Bindings> {
+  defaultPort = 8080;
+  sleepAfter = "5m"; // stop the container after 5 minutes of inactivity
+
+  constructor(ctx: DurableObject["ctx"], env: Bindings) {
+    super(ctx, env);
+    this.envVars = {
+      WHISPER_BASE_URL: env.WHISPER_BASE_URL ?? "https://api.openai.com",
+      WHISPER_API_KEY: env.WHISPER_API_KEY,
+      WHISPER_MODEL: env.WHISPER_MODEL ?? "whisper-1",
+      GEMINI_API_KEY: env.GEMINI_API_KEY,
+      GEMINI_MODEL: env.GEMINI_MODEL ?? "gemini-2.0-flash-lite",
+    };
+  }
+
+  // The Container base class uses HTTP inflight counters to decide when the
+  // container is idle, but a single long-running audio-processing request can
+  // outlive that tracking and trigger sleepAfter while the pipeline is still
+  // working. As long as we still hold a job in storage, keep the container
+  // alive; otherwise fall back to the default stop behaviour.
+  override async onActivityExpired(): Promise<void> {
+    const job = await this.ctx.storage.get("job");
+    if (job) {
+      this.renewActivityTimeout();
+      return;
+    }
+    await this.stop();
+  }
+
+  override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/enqueue" && request.method === "POST") {
       const job = await request.json<JobPayload>();
       await this.ctx.storage.put("job", job);
-      await this.ctx.storage.setAlarm(Date.now());
+      // Use `schedule()` instead of setAlarm — the Container base class uses
+      // its own alarm for activity timeout / sleep management, so we must not
+      // override `alarm()` directly.
+      await this.schedule(0, "runJob");
       return new Response("ok");
-    }
-
-    if (url.pathname === "/process" && request.method === "POST") {
-      return this.forwardToContainer(request);
     }
 
     return new Response("not found", { status: 404 });
   }
 
-  async alarm(): Promise<void> {
+  async runJob(): Promise<void> {
     const job = await this.ctx.storage.get<JobPayload>("job");
     if (!job) return;
 
@@ -71,10 +102,10 @@ export class KoeProcessor extends DurableObject<Bindings> {
       const retries = (job.retries ?? 0) + 1;
 
       if (retries <= MAX_RETRIES) {
-        // Reset status to pending so the next retry can proceed
         await updateJobStatus(this.env.DB, job.jobId, "pending");
         await this.ctx.storage.put("job", { ...job, retries });
-        await this.ctx.storage.setAlarm(Date.now() + retries * 30_000);
+        // exponential-ish backoff: 30s, 60s, 90s
+        await this.schedule(retries * 30, "runJob");
       } else {
         await updateJobStatus(this.env.DB, job.jobId, "failed", message);
         await this.ctx.storage.delete("job");
@@ -86,15 +117,13 @@ export class KoeProcessor extends DurableObject<Bindings> {
     const claimed = await claimJobForProcessing(this.env.DB, job.jobId);
     if (!claimed) return; // Already processing or completed
 
-    // Download audio from R2 as stream
     const r2Object = await this.env.BUCKET.get(job.audioKey);
     if (!r2Object) {
       await updateJobStatus(this.env.DB, job.jobId, "failed", "audio not found in R2");
       return;
     }
 
-    // Forward audio stream to container (no buffering)
-    const response = await this.forwardToContainer(
+    const response = await this.containerFetch(
       new Request("http://container/process", {
         method: "POST",
         body: r2Object.body,
@@ -111,7 +140,6 @@ export class KoeProcessor extends DurableObject<Bindings> {
 
     const result = await response.json<ProcessResult>();
 
-    // Store results in R2
     await uploadJSON(
       this.env.BUCKET,
       `${job.userId}/results/${job.jobId}/transcript.json`,
@@ -123,7 +151,6 @@ export class KoeProcessor extends DurableObject<Bindings> {
       result.topics,
     );
 
-    // Store chunks in D1
     if (result.chunks.length > 0) {
       await createChunks(
         this.env.DB,
@@ -139,7 +166,6 @@ export class KoeProcessor extends DurableObject<Bindings> {
       );
     }
 
-    // Store topics in D1
     if (result.topics.length > 0) {
       await createTopics(
         this.env.DB,
@@ -162,29 +188,5 @@ export class KoeProcessor extends DurableObject<Bindings> {
       totalChunks: result.chunks.length,
       completedChunks: result.chunks.length,
     });
-  }
-
-  private async ensureContainer(): Promise<void> {
-    const container = this.ctx.container;
-    if (!container) throw new Error("container not available");
-
-    if (!container.running) {
-      container.start({
-        enableInternet: true,
-        env: {
-          WHISPER_BASE_URL: this.env.WHISPER_BASE_URL ?? "https://api.openai.com",
-          WHISPER_API_KEY: this.env.WHISPER_API_KEY,
-          WHISPER_MODEL: this.env.WHISPER_MODEL ?? "whisper-1",
-          GEMINI_API_KEY: this.env.GEMINI_API_KEY,
-          GEMINI_MODEL: this.env.GEMINI_MODEL ?? "gemini-2.0-flash-lite",
-        },
-      });
-      await container.monitor();
-    }
-  }
-
-  private async forwardToContainer(request: Request): Promise<Response> {
-    await this.ensureContainer();
-    return this.ctx.container!.getTcpPort(8080).fetch(request);
   }
 }

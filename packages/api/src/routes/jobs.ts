@@ -79,6 +79,8 @@ const jobs = new Hono<Env>()
         id: j.id,
         status: j.status,
         audio_key: j.audioKey,
+        audio_duration_sec: j.audioDurationSec,
+        summary: j.summary,
         created_at: j.createdAt,
         updated_at: j.updatedAt,
       })),

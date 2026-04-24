@@ -42,36 +42,8 @@ const electronAPI: ElectronAPI = {
   openExternal: (url) => ipcRenderer.invoke(IPC.APP_OPEN_EXTERNAL, url),
   openScreenRecordingSettings: () => ipcRenderer.invoke(IPC.APP_OPEN_SCREEN_RECORDING_SETTINGS),
 
-  // Upload
-  multipartUpload: (filePath, token) => ipcRenderer.invoke(IPC.UPLOAD_MULTIPART, filePath, token),
-
   // Popover
   openMainWindow: () => ipcRenderer.invoke(IPC.POPOVER_OPEN_MAIN_WINDOW),
-
-  // Settings
-  getSettings: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
-  saveSettings: (settings) => ipcRenderer.invoke(IPC.SETTINGS_SAVE, settings),
-  getApiKeys: () => ipcRenderer.invoke(IPC.SETTINGS_GET_API_KEYS),
-  saveApiKeys: (keys) => ipcRenderer.invoke(IPC.SETTINGS_SAVE_API_KEYS, keys),
-  saveAll: (payload) => ipcRenderer.invoke(IPC.SETTINGS_SAVE_ALL, payload),
-  isConfigured: () => ipcRenderer.invoke(IPC.SETTINGS_IS_CONFIGURED),
-
-  // Sidecar
-  getSidecarStatus: () => ipcRenderer.invoke(IPC.SIDECAR_STATUS),
-  onSidecarStatusChanged: (callback) => {
-    const handler = (_: unknown, state: import("~/shared/ipc-channels").SidecarState) =>
-      callback(state);
-    ipcRenderer.on(IPC.SIDECAR_STATUS_CHANGED, handler);
-    return () => ipcRenderer.removeListener(IPC.SIDECAR_STATUS_CHANGED, handler);
-  },
-
-  // Local processing
-  processLocal: (audioFilePath) => ipcRenderer.invoke(IPC.LOCAL_PROCESS, audioFilePath),
-
-  // Local history
-  listHistory: () => ipcRenderer.invoke(IPC.HISTORY_LIST),
-  getHistoryJob: (id) => ipcRenderer.invoke(IPC.HISTORY_GET, id),
-  deleteHistoryJob: (id) => ipcRenderer.invoke(IPC.HISTORY_DELETE, id),
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

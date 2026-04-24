@@ -24,11 +24,6 @@ describe("CORS", () => {
 });
 
 describe("route mounting", () => {
-  it("POST /api/v1/transcribe returns 400 without audio", async () => {
-    const res = await app.request("/api/v1/transcribe", { method: "POST" }, makeEnv());
-    expect(res.status).toBe(400);
-  });
-
   it("GET /api/v1/jobs returns 401 without auth", async () => {
     const res = await app.request("/api/v1/jobs", {}, makeEnv());
     expect(res.status).toBe(401);

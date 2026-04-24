@@ -1,6 +1,6 @@
-import { AudioWaveform, History, LogIn, LogOut, Mic, Settings } from "lucide-react";
+import { AudioWaveform, History, LogOut, Mic, Settings } from "lucide-react";
 
-type View = "transcribe" | "history" | "settings" | "auth";
+type View = "transcribe" | "history" | "settings";
 
 interface SidebarProps {
   view: View;
@@ -8,17 +8,9 @@ interface SidebarProps {
   onLogout: () => void;
   userInitial: string | null;
   userEmail: string | null;
-  isAuthenticated: boolean;
 }
 
-export function Sidebar({
-  view,
-  setView,
-  onLogout,
-  userInitial,
-  userEmail,
-  isAuthenticated,
-}: SidebarProps) {
+export function Sidebar({ view, setView, onLogout, userInitial, userEmail }: SidebarProps) {
   return (
     <aside className="flex w-60 flex-col border-r border-r-[rgba(0,0,0,0.03)] bg-white">
       {/* Logo */}
@@ -66,7 +58,7 @@ export function Sidebar({
 
       <div className="flex-1" />
 
-      {isAuthenticated && userInitial && (
+      {userInitial && (
         <div className="flex items-center gap-2 border-t border-surface px-4 py-3">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-surface text-xs font-semibold text-text-primary">
             {userInitial}
@@ -76,23 +68,6 @@ export function Sidebar({
           )}
           <button onClick={onLogout} className="text-text-secondary hover:text-text-primary">
             <LogOut size={14} />
-          </button>
-        </div>
-      )}
-
-      {!isAuthenticated && (
-        <div className="flex flex-col gap-2.5 border-t border-surface px-4 py-4">
-          <p className="text-[11px] leading-relaxed text-text-secondary">
-            ログインすると履歴が
-            <br />
-            クラウドに同期されます
-          </p>
-          <button
-            onClick={() => setView("auth")}
-            className="flex w-full items-center justify-center gap-1.5 rounded-button bg-text-primary py-2 text-xs font-medium text-white hover:opacity-90"
-          >
-            <LogIn size={13} />
-            Google でログイン
           </button>
         </div>
       )}

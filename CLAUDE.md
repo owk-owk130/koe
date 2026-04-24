@@ -1,36 +1,36 @@
 # koe
 
-音声をテキストに文字起こしし、トピックごとに分割するAPI + MCPサーバー。
+音声をテキストに文字起こしし、トピックごとに分割するデスクトップアプリ + API + MCP サーバー。
 
 ## Architecture
 
-### 全体構成（ハイブリッド）
+### 全体構成
 
 ```
 Desktop App (Electron + React)
-    ├── ローカル処理パス
-    │     main process ── Go sidecar (cmd/sidecar)
-    │                       ├── ffmpeg 音声分割
-    │                       ├── Whisper 文字起こし
-    │                       └── Gemini トピック分割
-    └── サーバー同期パス（要認証、optional）
-          ▼
-Workers (Hono/TS) ── API / 認証 / 同期
-    │                   ├── R2 (テキスト結果)
+    ├─ 録音 (MediaRecorder)
+    ├─ ジョブ作成 (multipart form)
+    └─ ジョブポーリング
+         ▼
+Workers (Hono/TS) ── API / 認証 (すべて requireAuth)
+    │                   ├── R2 (音声 + 結果 JSON)
     │                   └── D1 (ジョブ/トピックのメタ情報)
-    ▼ DurableObject (KoeProcessor) ── alarm パターンで非同期ジョブ処理（Web版用）
-Workers Containers (Go HTTP :8080) ── Web版用
+    ▼ DurableObject (KoeProcessor) ── alarm パターンで非同期ジョブ処理
+Workers Containers (Go HTTP :8080) ── 音声処理
     ├── ffmpeg 音声分割
     ├── Whisper (Workers AI)
     └── LLM トピック分割 (Gemini Flash-Lite)
 ```
 
+Desktop アプリ側には音声処理ロジックを持たず、録音済み音声を API に送ってサーバー側で処理する。
+GPL な ffmpeg 等の同梱がないため MIT のまま配布できる。
+
 ### パッケージ構成（モノレポ）
 
 ```
 packages/
-├── api/       # Workers + Hono (TS) - API / 認証
-├── worker/    # Go - 音声処理 (server / sidecar / cli / mcp)
+├── api/       # Workers + Hono (TS) - API / 認証 / MCP
+├── worker/    # Go - 音声処理 (Workers Containers)
 ├── shared/    # 共有ユーティリティ (format / auth / API client)
 └── desktop/   # Electron デスクトップアプリ
 ```
@@ -40,7 +40,7 @@ packages/
 | レイヤー     | 技術                                                                             |
 | ------------ | -------------------------------------------------------------------------------- |
 | API          | Cloudflare Workers + Hono (TypeScript)                                           |
-| 音声処理     | Go (ローカル sidecar / Workers Containers / CLI / MCP)                           |
+| 音声処理     | Go (Workers Containers のみ)                                                     |
 | 文字起こし   | Workers AI Whisper (@cf/openai/whisper-large-v3-turbo)、OpenAI互換で差し替え可能 |
 | トピック分割 | Gemini Flash-Lite（デフォルト）、interface で差し替え可能                        |
 | DB           | Cloudflare D1                                                                    |
@@ -50,22 +50,21 @@ packages/
 
 ### API 設計
 
-```
-# パブリック（ステートレス、レート制限あり）
-POST /api/v1/transcribe        # 音声→テキスト、保存しない（optionalAuth）
+すべて requireAuth。Desktop も MCP もログイン必須。
 
-# 認証あり（ステートフル）
-POST /api/v1/sync              # ローカル処理結果をサーバーに同期（Desktop→Cloud）
-POST /api/v1/jobs              # ジョブ作成（文字起こし+トピック分割+保存）→ DO alarm で非同期処理
+```
+# ジョブ
+POST /api/v1/jobs              # ジョブ作成（multipart form で音声送信）→ DO alarm で非同期処理
 GET  /api/v1/jobs              # ジョブ一覧（自分のだけ）
 GET  /api/v1/jobs/:id          # ジョブ詳細
+DELETE /api/v1/jobs/:id        # ジョブ削除（R2 → D1 の順）
 GET  /api/v1/jobs/:id/topics   # トピック一覧
 
-# R2 Multipart Upload（大容量音声）
+# R2 Multipart Upload（大容量音声、将来用）
 POST /api/v1/uploads                        # アップロード開始
 PUT  /api/v1/uploads/:uploadId/parts/:num   # パーツアップロード
-POST /api/v1/uploads/:uploadId/complete      # 完了
-DELETE /api/v1/uploads/:uploadId             # 中止
+POST /api/v1/uploads/:uploadId/complete     # 完了
+DELETE /api/v1/uploads/:uploadId            # 中止
 
 # 認証
 GET  /auth/device              # Device Flow 開始
@@ -86,13 +85,10 @@ ALL  /mcp                      # Claude Desktop / モバイル向けリモート
 | `get_topics`    | ジョブに紐づくトピック一覧                 |
 | `search_topics` | タイトル/サマリ LIKE 検索、自ユーザー範囲  |
 
-- `/transcribe` は `optionalAuth`：トークンなしでも使えるが、将来 `requireAuth` に差し替え可能
-- 認証ありエンドポイントはユーザーごとにデータ分離
-
 ### R2 キー設計
 
 ```
-{userId}/audio/{jobId}/original.mp3
+{userId}/audio/{jobId}/original.{ext}
 {userId}/audio/{jobId}/chunks/{index}.mp3
 {userId}/results/{jobId}/transcript.json
 {userId}/results/{jobId}/topics.json
@@ -109,10 +105,9 @@ pending → processing → completed
 ### 設計方針
 
 - Whisper / LLM クライアントは interface で抽象化し、baseURL 差し替えで切り替え可能にする
-- Go のコアロジックは cmd/server, cmd/sidecar, cmd/cli, cmd/mcp で共有
 - D1 にはメタ情報のみ、巨大テキストは R2 に JSON で保存
 - 長時間音声はチャンク分割（静音検出 + 時間上限）で対応
-- 大容量ファイルは R2 Multipart Upload で対応
+- 大容量ファイルは R2 Multipart Upload で対応（Desktop v1 では未使用）
 - ジョブは冪等性を担保（チャンクID + 状態管理）
 - 進捗通知はポーリング + ステータスAPI
 
