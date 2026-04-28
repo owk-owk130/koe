@@ -163,3 +163,102 @@ func TestPipeline_Run_AnalyzerError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 }
+
+// Transcribe is the standalone Whisper-only step used by the orchestrator to
+// persist intermediate output before invoking Gemini.
+func TestPipeline_Transcribe(t *testing.T) {
+	chunks := []splitter.Chunk{
+		{Index: 0, Path: "chunk0.mp3", StartSec: 0, EndSec: 30},
+		{Index: 1, Path: "chunk1.mp3", StartSec: 30, EndSec: 60},
+	}
+	transcripts := map[string]*whisper.Transcript{
+		"chunk0.mp3": {
+			Text:     "hello",
+			Segments: []whisper.Segment{{Text: "hello", StartSec: 0, EndSec: 5}},
+		},
+		"chunk1.mp3": {
+			Text:     "world",
+			Segments: []whisper.Segment{{Text: "world", StartSec: 30, EndSec: 35}},
+		},
+	}
+
+	p := &Pipeline{
+		Splitter:    &mockSplitter{chunks: chunks},
+		Transcriber: &mockTranscriber{results: transcripts},
+	}
+
+	out, err := p.Transcribe(context.Background(), "test.mp3")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got, want := out.Transcript.Text, "hello\nworld\n"; got != want {
+		t.Errorf("Transcript.Text = %q, want %q", got, want)
+	}
+	if len(out.Transcript.Segments) != 2 {
+		t.Fatalf("expected 2 segments, got %d", len(out.Transcript.Segments))
+	}
+	if len(out.Chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(out.Chunks))
+	}
+	if out.Chunks[0].Text != "hello" || out.Chunks[1].Text != "world" {
+		t.Errorf("unexpected chunk texts: %+v / %+v", out.Chunks[0], out.Chunks[1])
+	}
+}
+
+func TestPipeline_Transcribe_SplitterError(t *testing.T) {
+	p := &Pipeline{
+		Splitter:    &mockSplitter{err: errors.New("split failed")},
+		Transcriber: &mockTranscriber{},
+	}
+	if _, err := p.Transcribe(context.Background(), "test.mp3"); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestPipeline_Transcribe_TranscriberError(t *testing.T) {
+	p := &Pipeline{
+		Splitter: &mockSplitter{chunks: []splitter.Chunk{{Index: 0, Path: "chunk0.mp3"}}},
+		Transcriber: &mockTranscriber{
+			err: errors.New("transcribe failed"),
+		},
+	}
+	if _, err := p.Transcribe(context.Background(), "test.mp3"); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+// Analyze runs Gemini on pre-computed segments. It must work without the
+// splitter or transcriber, mirroring the analyze-retry path on the server.
+func TestPipeline_Analyze(t *testing.T) {
+	segments := []whisper.Segment{
+		{Text: "hello", StartSec: 0, EndSec: 5},
+		{Text: "world", StartSec: 5, EndSec: 10},
+	}
+	analysis := &topic.AnalysisResult{
+		Summary: "A short greeting.",
+		Topics: []topic.Topic{
+			{Index: 0, Title: "Greeting", StartSec: 0, EndSec: 10},
+		},
+	}
+
+	p := &Pipeline{Analyzer: &mockAnalyzer{result: analysis}}
+
+	out, err := p.Analyze(context.Background(), segments)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out.Summary != "A short greeting." {
+		t.Errorf("Summary = %q", out.Summary)
+	}
+	if len(out.Topics) != 1 {
+		t.Fatalf("expected 1 topic, got %d", len(out.Topics))
+	}
+}
+
+func TestPipeline_Analyze_AnalyzerError(t *testing.T) {
+	p := &Pipeline{Analyzer: &mockAnalyzer{err: errors.New("analyze failed")}}
+	if _, err := p.Analyze(context.Background(), nil); err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}

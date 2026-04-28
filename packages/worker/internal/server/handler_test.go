@@ -3,10 +3,12 @@ package server
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/pipeline"
@@ -15,12 +17,24 @@ import (
 )
 
 type mockRunner struct {
-	result *pipeline.Result
-	err    error
+	transcribeOut *pipeline.TranscribeOutput
+	transcribeErr error
+	analyzeOut    *pipeline.AnalyzeOutput
+	analyzeErr    error
 }
 
-func (m *mockRunner) Run(_ context.Context, _ pipeline.Input) (*pipeline.Result, error) {
-	return m.result, m.err
+func (m *mockRunner) Transcribe(
+	_ context.Context,
+	_ string,
+) (*pipeline.TranscribeOutput, error) {
+	return m.transcribeOut, m.transcribeErr
+}
+
+func (m *mockRunner) Analyze(
+	_ context.Context,
+	_ []whisper.Segment,
+) (*pipeline.AnalyzeOutput, error) {
+	return m.analyzeOut, m.analyzeErr
 }
 
 func TestHealthHandler(t *testing.T) {
@@ -44,28 +58,30 @@ func TestHealthHandler(t *testing.T) {
 	}
 }
 
-func TestProcessHandler_Success(t *testing.T) {
+// /transcribe receives raw audio and returns the Whisper artifact.
+func TestTranscribeHandler_Success(t *testing.T) {
 	runner := &mockRunner{
-		result: &pipeline.Result{
+		transcribeOut: &pipeline.TranscribeOutput{
 			Transcript: whisper.Transcript{
-				Text:     "hello world",
-				Segments: []whisper.Segment{{Text: "hello world", StartSec: 0, EndSec: 10}},
-			},
-			Topics: []topic.Topic{
-				{Index: 0, Title: "Greeting", StartSec: 0, EndSec: 10},
+				Text: "hello world",
+				Segments: []whisper.Segment{
+					{Text: "hello world", StartSec: 0, EndSec: 10},
+				},
 			},
 			Chunks: []pipeline.ChunkResult{
 				{Index: 0, StartSec: 0, EndSec: 10, Text: "hello world"},
 			},
 		},
 	}
-
 	h := &Handler{Runner: runner}
 	srv := httptest.NewServer(h.Mux())
 	defer srv.Close()
 
-	audio := []byte("fake audio data")
-	resp, err := http.Post(srv.URL+"/process", "audio/mpeg", bytes.NewReader(audio))
+	resp, err := http.Post(
+		srv.URL+"/transcribe",
+		"audio/mpeg",
+		bytes.NewReader([]byte("fake audio data")),
+	)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -75,18 +91,24 @@ func TestProcessHandler_Success(t *testing.T) {
 		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
 
-	body, _ := io.ReadAll(resp.Body)
-	if len(body) == 0 {
-		t.Error("expected non-empty response body")
+	var got pipeline.TranscribeOutput
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Transcript.Text != "hello world" {
+		t.Errorf("Transcript.Text = %q", got.Transcript.Text)
+	}
+	if len(got.Chunks) != 1 {
+		t.Errorf("expected 1 chunk, got %d", len(got.Chunks))
 	}
 }
 
-func TestProcessHandler_NoBody(t *testing.T) {
+func TestTranscribeHandler_NoBody(t *testing.T) {
 	h := &Handler{Runner: &mockRunner{}}
 	srv := httptest.NewServer(h.Mux())
 	defer srv.Close()
 
-	resp, err := http.Post(srv.URL+"/process", "audio/mpeg", http.NoBody)
+	resp, err := http.Post(srv.URL+"/transcribe", "audio/mpeg", http.NoBody)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -97,15 +119,17 @@ func TestProcessHandler_NoBody(t *testing.T) {
 	}
 }
 
-func TestProcessHandler_PipelineError(t *testing.T) {
-	runner := &mockRunner{err: errors.New("pipeline failed")}
-
+func TestTranscribeHandler_PipelineError(t *testing.T) {
+	runner := &mockRunner{transcribeErr: errors.New("transcribe failed")}
 	h := &Handler{Runner: runner}
 	srv := httptest.NewServer(h.Mux())
 	defer srv.Close()
 
-	audio := []byte("fake audio data")
-	resp, err := http.Post(srv.URL+"/process", "audio/mpeg", bytes.NewReader(audio))
+	resp, err := http.Post(
+		srv.URL+"/transcribe",
+		"audio/mpeg",
+		bytes.NewReader([]byte("fake")),
+	)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
@@ -113,6 +137,112 @@ func TestProcessHandler_PipelineError(t *testing.T) {
 
 	if resp.StatusCode != http.StatusInternalServerError {
 		t.Errorf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestTranscribeHandler_MethodNotAllowed(t *testing.T) {
+	h := &Handler{Runner: &mockRunner{}}
+	srv := httptest.NewServer(h.Mux())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/transcribe")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", resp.StatusCode)
+	}
+}
+
+// /analyze receives pre-computed segments and returns Gemini's topic analysis.
+func TestAnalyzeHandler_Success(t *testing.T) {
+	runner := &mockRunner{
+		analyzeOut: &pipeline.AnalyzeOutput{
+			Summary: "A short greeting.",
+			Topics: []topic.Topic{
+				{Index: 0, Title: "Greeting", StartSec: 0, EndSec: 10},
+			},
+		},
+	}
+	h := &Handler{Runner: runner}
+	srv := httptest.NewServer(h.Mux())
+	defer srv.Close()
+
+	body := `{"segments":[{"text":"hello","start_sec":0,"end_sec":5}]}`
+	resp, err := http.Post(srv.URL+"/analyze", "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var got pipeline.AnalyzeOutput
+	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.Summary != "A short greeting." {
+		t.Errorf("Summary = %q", got.Summary)
+	}
+	if len(got.Topics) != 1 {
+		t.Errorf("expected 1 topic, got %d", len(got.Topics))
+	}
+}
+
+func TestAnalyzeHandler_InvalidJSON(t *testing.T) {
+	h := &Handler{Runner: &mockRunner{}}
+	srv := httptest.NewServer(h.Mux())
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/analyze", "application/json", strings.NewReader("{not json"))
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestAnalyzeHandler_PipelineError(t *testing.T) {
+	runner := &mockRunner{analyzeErr: errors.New("gemini boom")}
+	h := &Handler{Runner: runner}
+	srv := httptest.NewServer(h.Mux())
+	defer srv.Close()
+
+	resp, err := http.Post(
+		srv.URL+"/analyze",
+		"application/json",
+		strings.NewReader(`{"segments":[]}`),
+	)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", resp.StatusCode)
+	}
+}
+
+func TestAnalyzeHandler_MethodNotAllowed(t *testing.T) {
+	h := &Handler{Runner: &mockRunner{}}
+	srv := httptest.NewServer(h.Mux())
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/analyze")
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", resp.StatusCode)
 	}
 }
 
@@ -140,21 +270,5 @@ func TestExtFromContentType(t *testing.T) {
 				t.Errorf("extFromContentType(%q) = %q, want %q", tt.contentType, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestProcessHandler_MethodNotAllowed(t *testing.T) {
-	h := &Handler{Runner: &mockRunner{}}
-	srv := httptest.NewServer(h.Mux())
-	defer srv.Close()
-
-	resp, err := http.Get(srv.URL + "/process")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405, got %d", resp.StatusCode)
 	}
 }
