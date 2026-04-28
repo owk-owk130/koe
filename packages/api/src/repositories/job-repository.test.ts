@@ -3,7 +3,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { setupD1 } from "~/test-helpers";
 import { createChunks, findChunksByJob } from "./chunk-repository";
 import {
-  claimJobForProcessing,
+  claimJobForAnalyze,
+  claimJobForTranscribe,
   completeJob,
   createCompletedJob,
   createJob,
@@ -12,6 +13,9 @@ import {
   findJobById,
   findTopicsByJob,
   listJobsByUser,
+  markAsAnalyzeFailed,
+  markAsTranscribed,
+  markAsTranscribeFailed,
   searchTopicsByUser,
   updateJobStatus,
 } from "./job-repository";
@@ -65,9 +69,9 @@ describe("job-repository", () => {
   });
 
   it("updates job status", async () => {
-    await updateJobStatus(env.DB, "job-1", "splitting");
+    await updateJobStatus(env.DB, "job-1", "transcribing");
     const job = await findJobById(env.DB, "job-1");
-    expect(job!.status).toBe("splitting");
+    expect(job!.status).toBe("transcribing");
   });
 
   it("updates job status with error", async () => {
@@ -75,39 +79,6 @@ describe("job-repository", () => {
     const job = await findJobById(env.DB, "job-2");
     expect(job!.status).toBe("failed");
     expect(job!.error).toBe("something went wrong");
-  });
-
-  describe("claimJobForProcessing", () => {
-    it("transitions pending → processing and returns true", async () => {
-      await createJob(env.DB, {
-        id: "claim-pending",
-        userId: "u1",
-        audioKey: "u1/audio/claim-pending/original.mp3",
-      });
-
-      const claimed = await claimJobForProcessing(env.DB, "claim-pending");
-      expect(claimed).toBe(true);
-
-      const job = await findJobById(env.DB, "claim-pending");
-      expect(job!.status).toBe("processing");
-    });
-
-    it("returns false when the job is not pending", async () => {
-      await createJob(env.DB, {
-        id: "claim-nonpending",
-        userId: "u1",
-        audioKey: "u1/audio/claim-nonpending/original.mp3",
-      });
-      await updateJobStatus(env.DB, "claim-nonpending", "processing");
-
-      const claimed = await claimJobForProcessing(env.DB, "claim-nonpending");
-      expect(claimed).toBe(false);
-    });
-
-    it("returns false when the job does not exist", async () => {
-      const claimed = await claimJobForProcessing(env.DB, "does-not-exist");
-      expect(claimed).toBe(false);
-    });
   });
 
   describe("completeJob", () => {
@@ -367,6 +338,153 @@ describe("job-repository", () => {
     it("returns false for a non-existent job", async () => {
       const deleted = await deleteJob(env.DB, "does-not-exist", "u1");
       expect(deleted).toBe(false);
+    });
+  });
+
+  describe("claimJobForTranscribe", () => {
+    it("transitions pending → transcribing and returns true", async () => {
+      await createJob(env.DB, {
+        id: "tx-claim-1",
+        userId: "u1",
+        audioKey: "u1/audio/tx-claim-1/original.mp3",
+      });
+
+      const claimed = await claimJobForTranscribe(env.DB, "tx-claim-1");
+      expect(claimed).toBe(true);
+
+      const job = await findJobById(env.DB, "tx-claim-1");
+      expect(job!.status).toBe("transcribing");
+    });
+
+    it("also accepts transcribe_failed → transcribing for retries", async () => {
+      await createJob(env.DB, {
+        id: "tx-claim-retry",
+        userId: "u1",
+        audioKey: "u1/audio/tx-claim-retry/original.mp3",
+      });
+      await markAsTranscribeFailed(env.DB, "tx-claim-retry", "boom");
+
+      const claimed = await claimJobForTranscribe(env.DB, "tx-claim-retry");
+      expect(claimed).toBe(true);
+
+      const job = await findJobById(env.DB, "tx-claim-retry");
+      expect(job!.status).toBe("transcribing");
+      // The error from the prior failure must be cleared on a fresh claim.
+      expect(job!.error).toBeNull();
+    });
+
+    it("returns false when the job is not in a transcribe-eligible state", async () => {
+      await createJob(env.DB, {
+        id: "tx-claim-busy",
+        userId: "u1",
+        audioKey: "u1/audio/tx-claim-busy/original.mp3",
+      });
+      await updateJobStatus(env.DB, "tx-claim-busy", "completed");
+
+      const claimed = await claimJobForTranscribe(env.DB, "tx-claim-busy");
+      expect(claimed).toBe(false);
+    });
+  });
+
+  describe("markAsTranscribed", () => {
+    it("records transcript_key + totalChunks and moves status to transcribed", async () => {
+      await createJob(env.DB, {
+        id: "tx-mark-1",
+        userId: "u1",
+        audioKey: "u1/audio/tx-mark-1/original.mp3",
+      });
+      await claimJobForTranscribe(env.DB, "tx-mark-1");
+
+      await markAsTranscribed(env.DB, "tx-mark-1", {
+        transcriptKey: "u1/results/tx-mark-1/transcript.json",
+        totalChunks: 7,
+      });
+
+      const job = await findJobById(env.DB, "tx-mark-1");
+      expect(job!.status).toBe("transcribed");
+      expect(job!.transcriptKey).toBe("u1/results/tx-mark-1/transcript.json");
+      expect(job!.totalChunks).toBe(7);
+      expect(job!.completedChunks).toBe(7);
+    });
+  });
+
+  describe("markAsTranscribeFailed", () => {
+    it("records the error and moves status to transcribe_failed", async () => {
+      await createJob(env.DB, {
+        id: "tx-fail-1",
+        userId: "u1",
+        audioKey: "u1/audio/tx-fail-1/original.mp3",
+      });
+
+      await markAsTranscribeFailed(env.DB, "tx-fail-1", "whisper boom");
+
+      const job = await findJobById(env.DB, "tx-fail-1");
+      expect(job!.status).toBe("transcribe_failed");
+      expect(job!.error).toBe("whisper boom");
+    });
+  });
+
+  describe("claimJobForAnalyze", () => {
+    it("transitions transcribed → analyzing", async () => {
+      await createJob(env.DB, {
+        id: "an-claim-1",
+        userId: "u1",
+        audioKey: "u1/audio/an-claim-1/original.mp3",
+      });
+      await updateJobStatus(env.DB, "an-claim-1", "transcribed");
+
+      const claimed = await claimJobForAnalyze(env.DB, "an-claim-1");
+      expect(claimed).toBe(true);
+
+      const job = await findJobById(env.DB, "an-claim-1");
+      expect(job!.status).toBe("analyzing");
+    });
+
+    it("transitions analyze_failed → analyzing for retries", async () => {
+      await createJob(env.DB, {
+        id: "an-claim-retry",
+        userId: "u1",
+        audioKey: "u1/audio/an-claim-retry/original.mp3",
+      });
+      await updateJobStatus(env.DB, "an-claim-retry", "transcribed");
+      await claimJobForAnalyze(env.DB, "an-claim-retry");
+      await markAsAnalyzeFailed(env.DB, "an-claim-retry", "gemini parse failed");
+
+      const claimed = await claimJobForAnalyze(env.DB, "an-claim-retry");
+      expect(claimed).toBe(true);
+
+      const job = await findJobById(env.DB, "an-claim-retry");
+      expect(job!.status).toBe("analyzing");
+      // Stale error must be cleared on a fresh claim.
+      expect(job!.error).toBeNull();
+    });
+
+    it("returns false when the job has not finished transcribe yet", async () => {
+      await createJob(env.DB, {
+        id: "an-claim-too-early",
+        userId: "u1",
+        audioKey: "u1/audio/an-claim-too-early/original.mp3",
+      });
+
+      const claimed = await claimJobForAnalyze(env.DB, "an-claim-too-early");
+      expect(claimed).toBe(false);
+    });
+  });
+
+  describe("markAsAnalyzeFailed", () => {
+    it("records the error and moves status to analyze_failed", async () => {
+      await createJob(env.DB, {
+        id: "an-fail-1",
+        userId: "u1",
+        audioKey: "u1/audio/an-fail-1/original.mp3",
+      });
+      await updateJobStatus(env.DB, "an-fail-1", "analyzing");
+
+      await markAsAnalyzeFailed(env.DB, "an-fail-1", "gemini boom");
+
+      const job = await findJobById(env.DB, "an-fail-1");
+      expect(job!.status).toBe("analyze_failed");
+      expect(job!.error).toBe("gemini boom");
     });
   });
 });

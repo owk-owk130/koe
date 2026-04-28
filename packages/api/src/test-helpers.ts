@@ -21,6 +21,7 @@ const migrations = [
         completed_chunks INTEGER DEFAULT 0,
         error TEXT,
         summary TEXT,
+        transcript_key TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`,
