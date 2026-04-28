@@ -86,7 +86,12 @@ func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*Transcrib
 			time.Since(chunkStart),
 		)
 		fullText += t.Text + "\n"
-		allSegments = append(allSegments, t.Segments...)
+		// Whisper returns chunk-local timestamps; shift onto the global timeline.
+		for _, seg := range t.Segments {
+			seg.StartSec += chunk.StartSec
+			seg.EndSec += chunk.StartSec
+			allSegments = append(allSegments, seg)
+		}
 		chunkResults = append(chunkResults, ChunkResult{
 			Index:    chunk.Index,
 			StartSec: chunk.StartSec,

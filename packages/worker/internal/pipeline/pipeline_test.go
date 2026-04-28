@@ -50,14 +50,22 @@ func TestPipeline_Run(t *testing.T) {
 		{Index: 1, Path: "chunk1.mp3", StartSec: 30, EndSec: 60},
 	}
 
+	// Whisper returns chunk-local timestamps (each chunk's first segment starts
+	// at 0). The pipeline must shift them onto the global timeline.
 	transcripts := map[string]*whisper.Transcript{
 		"chunk0.mp3": {
-			Text:     "hello world",
-			Segments: []whisper.Segment{{Text: "hello world", StartSec: 0, EndSec: 30}},
+			Text: "hello world",
+			Segments: []whisper.Segment{
+				{Text: "hello", StartSec: 0, EndSec: 5},
+				{Text: "world", StartSec: 25, EndSec: 30},
+			},
 		},
 		"chunk1.mp3": {
-			Text:     "goodbye world",
-			Segments: []whisper.Segment{{Text: "goodbye world", StartSec: 30, EndSec: 60}},
+			Text: "goodbye world",
+			Segments: []whisper.Segment{
+				{Text: "goodbye", StartSec: 0, EndSec: 5},
+				{Text: "world", StartSec: 25, EndSec: 30},
+			},
 		},
 	}
 
@@ -84,8 +92,21 @@ func TestPipeline_Run(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if len(result.Transcript.Segments) != 2 {
-		t.Errorf("expected 2 segments, got %d", len(result.Transcript.Segments))
+	if len(result.Transcript.Segments) != 4 {
+		t.Errorf("expected 4 segments, got %d", len(result.Transcript.Segments))
+	}
+
+	// chunk0 segments stay at chunk-local times because chunk.StartSec=0.
+	// chunk1 segments must be shifted by +30s onto the global timeline.
+	wantSegmentTimes := []struct{ start, end float64 }{
+		{0, 5}, {25, 30}, {30, 35}, {55, 60},
+	}
+	for i, want := range wantSegmentTimes {
+		got := result.Transcript.Segments[i]
+		if got.StartSec != want.start || got.EndSec != want.end {
+			t.Errorf("segment[%d] times = (%v,%v), want (%v,%v)",
+				i, got.StartSec, got.EndSec, want.start, want.end)
+		}
 	}
 
 	if result.Summary != "A conversation with greeting and farewell." {
