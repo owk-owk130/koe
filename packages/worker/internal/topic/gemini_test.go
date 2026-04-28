@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/whisper"
@@ -25,7 +26,6 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 			t.Errorf("expected no query params (API key should be in header), got %q", r.URL.RawQuery)
 		}
 
-		// Verify request body has system_instruction, contents, and generationConfig
 		body, _ := io.ReadAll(r.Body)
 		var req geminiRequest
 		if err := json.Unmarshal(body, &req); err != nil {
@@ -34,6 +34,11 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 		if req.SystemInstruction == nil || len(req.SystemInstruction.Parts) == 0 {
 			t.Fatal("expected non-empty system_instruction")
 		}
+		// transcript must not appear in the system prompt. We rebuild it
+		// server-side so the LLM never re-emits hallucinated audio.
+		if strings.Contains(req.SystemInstruction.Parts[0].Text, "transcript") {
+			t.Error("system instruction must not mention 'transcript'")
+		}
 		if len(req.Contents) == 0 {
 			t.Fatal("expected non-empty contents")
 		}
@@ -41,26 +46,32 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 			t.Errorf("expected responseMimeType 'application/json', got %q", req.GenerationConfig.ResponseMimeType)
 		}
 		if req.GenerationConfig.ResponseSchema == nil {
-			t.Error("expected non-nil responseSchema")
+			t.Fatal("expected non-nil responseSchema")
+		}
+		// transcript must not appear in the response schema either.
+		topicSchema := req.GenerationConfig.ResponseSchema["properties"].(map[string]any)["topics"].(map[string]any)["items"].(map[string]any)
+		topicProps := topicSchema["properties"].(map[string]any)
+		if _, exists := topicProps["transcript"]; exists {
+			t.Error("response schema topic must not include 'transcript' field")
 		}
 		if req.GenerationConfig.Temperature == nil || *req.GenerationConfig.Temperature != 0.2 {
 			t.Error("expected temperature 0.2")
 		}
 
-		// Respond with Gemini format containing JSON analysis result
-		analysisResult := AnalysisResult{
-			Summary: "挨拶から始まり、天気について議論する会話。",
-			Topics: []Topic{
-				{Index: 0, Title: "挨拶", Summary: "挨拶の場面", Detail: "会話の冒頭で参加者が挨拶を交わしている場面。", StartSec: 0, EndSec: 30, Transcript: "こんにちは"},
-				{Index: 1, Title: "本題", Summary: "本題の議論", Detail: "天気について話し合う本題に入り、今日の天気予報や週末の天候について意見を交換している。", StartSec: 30, EndSec: 120, Transcript: "今日は天気について話しましょう"},
+		// Gemini returns topics WITHOUT transcript — the boundary-only contract.
+		modelOutput := map[string]any{
+			"summary": "挨拶から始まり、天気について議論する会話。",
+			"topics": []map[string]any{
+				{"index": 0, "title": "挨拶", "summary": "挨拶の場面", "detail": "会話の冒頭で参加者が挨拶を交わしている場面。", "start_sec": 0, "end_sec": 30},
+				{"index": 1, "title": "本題", "summary": "本題の議論", "detail": "天気について話し合う本題に入り、今日の天気予報や週末の天候について意見を交換している。", "start_sec": 30, "end_sec": 120},
 			},
 		}
-		topicsJSON, _ := json.Marshal(analysisResult)
+		out, _ := json.Marshal(modelOutput)
 
 		resp := geminiResponse{
 			Candidates: []geminiCandidate{{
 				Content: geminiContent{
-					Parts: []geminiPart{{Text: string(topicsJSON)}},
+					Parts: []geminiPart{{Text: string(out)}},
 				},
 			}},
 		}
@@ -76,11 +87,13 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 	}
 
 	segments := []whisper.Segment{
-		{Text: "こんにちは", StartSec: 0, EndSec: 30},
-		{Text: "今日は天気について話しましょう", StartSec: 30, EndSec: 120},
+		{Text: "こんにちは", StartSec: 0, EndSec: 5},
+		{Text: "おはようございます", StartSec: 5, EndSec: 10},
+		{Text: "今日は天気について話しましょう", StartSec: 30, EndSec: 60},
+		{Text: "明日も晴れるそうですね", StartSec: 60, EndSec: 90},
 	}
 
-	result, err := analyzer.Analyze(context.Background(), "こんにちは\n今日は天気について話しましょう", segments)
+	result, err := analyzer.Analyze(context.Background(), "fullText is unused", segments)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -94,11 +107,13 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 	if result.Topics[0].Title != "挨拶" {
 		t.Errorf("topics[0].Title = %q, want '挨拶'", result.Topics[0].Title)
 	}
-	if result.Topics[0].Detail == "" {
-		t.Error("expected non-empty detail for topics[0]")
+
+	// Topic.Transcript must be reconstructed server-side from segments.
+	if got, want := result.Topics[0].Transcript, "こんにちは\nおはようございます"; got != want {
+		t.Errorf("topics[0].Transcript = %q, want %q", got, want)
 	}
-	if result.Topics[1].StartSec != 30 {
-		t.Errorf("topics[1].StartSec = %f, want 30", result.Topics[1].StartSec)
+	if got, want := result.Topics[1].Transcript, "今日は天気について話しましょう\n明日も晴れるそうですね"; got != want {
+		t.Errorf("topics[1].Transcript = %q, want %q", got, want)
 	}
 }
 
