@@ -3,6 +3,7 @@ package whisper
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,11 +16,25 @@ import (
 
 // Client is an OpenAI-compatible Whisper API client.
 // When Model starts with "@cf/", it uses the Workers AI REST API format instead.
+//
+// Hallucination guards (Workers AI only):
+// VADFilter and ConditionOnPreviousText are pointers so callers can distinguish
+// "unset (use koe defaults)" from "explicitly false". Workers AI ships
+// vad_filter=false and condition_on_previous_text=true by default; koe flips
+// both because long-running speech with silence triggers loops like "はい\nはい\n…".
 type Client struct {
 	BaseURL    string
 	APIKey     string
 	Model      string
 	HTTPClient *http.Client
+
+	Language                      string
+	VADFilter                     *bool
+	ConditionOnPreviousText       *bool
+	CompressionRatioThreshold     float64
+	NoSpeechThreshold             float64
+	HallucinationSilenceThreshold float64
+	InitialPrompt                 string
 }
 
 type verboseJSONResponse struct {
@@ -121,19 +136,24 @@ func (c *Client) transcribeOpenAI(ctx context.Context, audioPath string) (*Trans
 }
 
 func (c *Client) transcribeWorkersAI(ctx context.Context, audioPath string) (*Transcript, error) {
-	f, err := os.Open(audioPath)
+	audio, err := os.ReadFile(audioPath)
 	if err != nil {
-		return nil, fmt.Errorf("open audio file: %w", err)
+		return nil, fmt.Errorf("read audio file: %w", err)
 	}
-	defer f.Close()
+
+	payload := c.buildWorkersAIPayload(audio)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal payload: %w", err)
+	}
 
 	url := c.BaseURL + "/run/" + c.Model
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, f)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", contentTypeFromExt(filepath.Ext(audioPath)))
+	req.Header.Set("Content-Type", "application/json")
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 		req.Header.Set("cf-aig-authorization", "Bearer "+c.APIKey)
@@ -169,6 +189,48 @@ func (c *Client) transcribeWorkersAI(ctx context.Context, audioPath string) (*Tr
 	}), nil
 }
 
+// buildWorkersAIPayload returns the JSON body for the Workers AI Whisper REST
+// API. Optional knobs are omitted when zero so Workers AI applies its own
+// defaults; vad_filter / condition_on_previous_text are always sent because we
+// intentionally override the upstream defaults.
+func (c *Client) buildWorkersAIPayload(audio []byte) map[string]any {
+	language := c.Language
+	if language == "" {
+		language = "ja"
+	}
+
+	vadFilter := true
+	if c.VADFilter != nil {
+		vadFilter = *c.VADFilter
+	}
+
+	conditionOnPrev := false
+	if c.ConditionOnPreviousText != nil {
+		conditionOnPrev = *c.ConditionOnPreviousText
+	}
+
+	payload := map[string]any{
+		"audio":                      base64.StdEncoding.EncodeToString(audio),
+		"task":                       "transcribe",
+		"language":                   language,
+		"vad_filter":                 vadFilter,
+		"condition_on_previous_text": conditionOnPrev,
+	}
+	if c.CompressionRatioThreshold != 0 {
+		payload["compression_ratio_threshold"] = c.CompressionRatioThreshold
+	}
+	if c.NoSpeechThreshold != 0 {
+		payload["no_speech_threshold"] = c.NoSpeechThreshold
+	}
+	if c.HallucinationSilenceThreshold != 0 {
+		payload["hallucination_silence_threshold"] = c.HallucinationSilenceThreshold
+	}
+	if c.InitialPrompt != "" {
+		payload["initial_prompt"] = c.InitialPrompt
+	}
+	return payload
+}
+
 func (c *Client) toTranscript(r *verboseJSONResponse) *Transcript {
 	segments := make([]Segment, len(r.Segments))
 	for i, s := range r.Segments {
@@ -181,24 +243,5 @@ func (c *Client) toTranscript(r *verboseJSONResponse) *Transcript {
 	return &Transcript{
 		Text:     r.Text,
 		Segments: segments,
-	}
-}
-
-func contentTypeFromExt(ext string) string {
-	switch strings.ToLower(ext) {
-	case ".mp3":
-		return "audio/mpeg"
-	case ".wav":
-		return "audio/wav"
-	case ".ogg":
-		return "audio/ogg"
-	case ".flac":
-		return "audio/flac"
-	case ".m4a":
-		return "audio/mp4"
-	case ".webm":
-		return "audio/webm"
-	default:
-		return "application/octet-stream"
 	}
 }
