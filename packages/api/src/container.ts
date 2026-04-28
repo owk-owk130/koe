@@ -2,26 +2,39 @@ import { Container } from "@cloudflare/containers";
 import type { DurableObject } from "cloudflare:workers";
 import { createChunks } from "./repositories/chunk-repository";
 import {
-  claimJobForProcessing,
+  claimJobForAnalyze,
+  claimJobForTranscribe,
   completeJob,
   createTopics,
-  updateJobStatus,
+  findJobById,
+  markAsAnalyzeFailed,
+  markAsTranscribed,
+  markAsTranscribeFailed,
 } from "./repositories/job-repository";
 import { uploadJSON } from "./services/r2-storage";
 import type { Bindings } from "./types";
 
+// JobPayload travels through DO storage between schedule fires. The phase
+// fields keep retry state isolated so a Gemini failure cannot recharge Whisper.
 export type JobPayload = {
   jobId: string;
   userId: string;
   audioKey: string;
-  retries?: number;
+  transcribeAttempts?: number;
+  analyzeAttempts?: number;
+  // When set to "analyze" the orchestrator skips the transcribe phase. This is
+  // how POST /api/v1/jobs/:id/analyze re-runs only the LLM step.
+  startPhase?: "transcribe" | "analyze";
 };
 
-export type ProcessResult = {
-  transcript: {
-    text: string;
-    segments: { text: string; start_sec: number; end_sec: number }[];
-  };
+type Segment = { text: string; start_sec: number; end_sec: number };
+
+type TranscribeOutput = {
+  transcript: { text: string; segments: Segment[] };
+  chunks: { index: number; start_sec: number; end_sec: number; text: string }[];
+};
+
+type AnalyzeOutput = {
   summary: string;
   topics: {
     index: number;
@@ -32,19 +45,13 @@ export type ProcessResult = {
     end_sec: number;
     transcript: string;
   }[];
-  chunks: {
-    index: number;
-    start_sec: number;
-    end_sec: number;
-    text: string;
-  }[];
 };
 
 const MAX_RETRIES = 3;
 
 // Wraps the Go audio-processing server (packages/worker). The Container base
 // class handles start/stop, port readiness, and idle sleep — we only implement
-// the job orchestration (claim → forward → persist → complete).
+// the job orchestration (claim → transcribe → persist → analyze → complete).
 export class KoeProcessor extends Container<Bindings> {
   defaultPort = 8080;
   sleepAfter = "5m"; // stop the container after 5 minutes of inactivity
@@ -94,37 +101,55 @@ export class KoeProcessor extends Container<Bindings> {
     const job = await this.ctx.storage.get<JobPayload>("job");
     if (!job) return;
 
-    try {
-      await this.processJob(job);
-      await this.ctx.storage.delete("job");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const retries = (job.retries ?? 0) + 1;
-
-      if (retries <= MAX_RETRIES) {
-        await updateJobStatus(this.env.DB, job.jobId, "pending");
-        await this.ctx.storage.put("job", { ...job, retries });
-        // exponential-ish backoff: 30s, 60s, 90s
-        await this.schedule(retries * 30, "runJob");
-      } else {
-        await updateJobStatus(this.env.DB, job.jobId, "failed", message);
-        await this.ctx.storage.delete("job");
+    // Transcribe phase. Skipped when the job is being re-analyzed.
+    if (job.startPhase !== "analyze") {
+      try {
+        await this.runTranscribe(job);
+      } catch (err) {
+        await this.handleTranscribeError(job, err);
+        return;
       }
     }
-  }
 
-  private async processJob(job: JobPayload): Promise<void> {
-    const claimed = await claimJobForProcessing(this.env.DB, job.jobId);
-    if (!claimed) return; // Already processing or completed
-
-    const r2Object = await this.env.BUCKET.get(job.audioKey);
-    if (!r2Object) {
-      await updateJobStatus(this.env.DB, job.jobId, "failed", "audio not found in R2");
+    // Analyze phase.
+    try {
+      await this.runAnalyze(job);
+    } catch (err) {
+      await this.handleAnalyzeError(job, err);
       return;
     }
 
+    await this.ctx.storage.delete("job");
+  }
+
+  private async runTranscribe(job: JobPayload): Promise<void> {
+    const claimed = await claimJobForTranscribe(this.env.DB, job.jobId);
+    if (!claimed) {
+      // Already past transcribe (transcribed / analyzing / completed) or in a
+      // non-claimable state. If the job is past transcribe, drop through so
+      // analyze can run; otherwise surface the unexpected state as an error.
+      const current = await findJobById(this.env.DB, job.jobId);
+      if (
+        current &&
+        (current.status === "transcribed" ||
+          current.status === "analyzing" ||
+          current.status === "analyze_failed" ||
+          current.status === "completed")
+      ) {
+        return;
+      }
+      throw new Error(
+        `could not claim job for transcribe (status=${current?.status ?? "unknown"})`,
+      );
+    }
+
+    const r2Object = await this.env.BUCKET.get(job.audioKey);
+    if (!r2Object) {
+      throw new Error("audio not found in R2");
+    }
+
     const response = await this.containerFetch(
-      new Request("http://container/process", {
+      new Request("http://container/transcribe", {
         method: "POST",
         body: r2Object.body,
         headers: {
@@ -135,27 +160,18 @@ export class KoeProcessor extends Container<Bindings> {
 
     if (!response.ok) {
       const text = await response.text();
-      throw new Error(`container error (${response.status}): ${text}`);
+      throw new Error(`container /transcribe error (${response.status}): ${text}`);
     }
 
-    const result = await response.json<ProcessResult>();
+    const out = await response.json<TranscribeOutput>();
+    const transcriptKey = `${job.userId}/results/${job.jobId}/transcript.json`;
+    await uploadJSON(this.env.BUCKET, transcriptKey, out.transcript);
 
-    await uploadJSON(
-      this.env.BUCKET,
-      `${job.userId}/results/${job.jobId}/transcript.json`,
-      result.transcript,
-    );
-    await uploadJSON(
-      this.env.BUCKET,
-      `${job.userId}/results/${job.jobId}/topics.json`,
-      result.topics,
-    );
-
-    if (result.chunks.length > 0) {
+    if (out.chunks.length > 0) {
       await createChunks(
         this.env.DB,
         job.jobId,
-        result.chunks.map((c) => ({
+        out.chunks.map((c) => ({
           id: crypto.randomUUID(),
           chunkIndex: c.index,
           audioKey: `${job.userId}/audio/${job.jobId}/chunks/${c.index}.mp3`,
@@ -166,11 +182,54 @@ export class KoeProcessor extends Container<Bindings> {
       );
     }
 
-    if (result.topics.length > 0) {
+    await markAsTranscribed(this.env.DB, job.jobId, {
+      transcriptKey,
+      totalChunks: out.chunks.length,
+    });
+  }
+
+  private async runAnalyze(job: JobPayload): Promise<void> {
+    const claimed = await claimJobForAnalyze(this.env.DB, job.jobId);
+    if (!claimed) {
+      const current = await findJobById(this.env.DB, job.jobId);
+      // Already completed → nothing to do.
+      if (current?.status === "completed") return;
+      throw new Error(`could not claim job for analyze (status=${current?.status ?? "unknown"})`);
+    }
+
+    const current = await findJobById(this.env.DB, job.jobId);
+    if (!current?.transcriptKey) {
+      throw new Error("transcript_key not set; transcribe must complete before analyze");
+    }
+
+    const transcriptObj = await this.env.BUCKET.get(current.transcriptKey);
+    if (!transcriptObj) {
+      throw new Error(`transcript not found in R2: ${current.transcriptKey}`);
+    }
+    const transcript = await transcriptObj.json<{ text: string; segments: Segment[] }>();
+
+    const response = await this.containerFetch(
+      new Request("http://container/analyze", {
+        method: "POST",
+        body: JSON.stringify({ segments: transcript.segments }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`container /analyze error (${response.status}): ${text}`);
+    }
+
+    const out = await response.json<AnalyzeOutput>();
+
+    await uploadJSON(this.env.BUCKET, `${job.userId}/results/${job.jobId}/topics.json`, out.topics);
+
+    if (out.topics.length > 0) {
       await createTopics(
         this.env.DB,
         job.jobId,
-        result.topics.map((t) => ({
+        out.topics.map((t) => ({
           id: crypto.randomUUID(),
           topicIndex: t.index,
           title: t.title,
@@ -183,10 +242,44 @@ export class KoeProcessor extends Container<Bindings> {
       );
     }
 
+    const totalChunks = current.totalChunks ?? 0;
     await completeJob(this.env.DB, job.jobId, {
-      summary: result.summary,
-      totalChunks: result.chunks.length,
-      completedChunks: result.chunks.length,
+      summary: out.summary,
+      totalChunks,
+      completedChunks: totalChunks,
     });
+  }
+
+  private async handleTranscribeError(job: JobPayload, err: unknown): Promise<void> {
+    const message = err instanceof Error ? err.message : String(err);
+    await markAsTranscribeFailed(this.env.DB, job.jobId, message);
+
+    const attempts = (job.transcribeAttempts ?? 0) + 1;
+    if (attempts <= MAX_RETRIES) {
+      await this.ctx.storage.put("job", { ...job, transcribeAttempts: attempts });
+      await this.schedule(attempts * 30, "runJob");
+      return;
+    }
+    // Retries exhausted. Status is already transcribe_failed; drop the job.
+    await this.ctx.storage.delete("job");
+  }
+
+  private async handleAnalyzeError(job: JobPayload, err: unknown): Promise<void> {
+    const message = err instanceof Error ? err.message : String(err);
+    await markAsAnalyzeFailed(this.env.DB, job.jobId, message);
+
+    const attempts = (job.analyzeAttempts ?? 0) + 1;
+    if (attempts <= MAX_RETRIES) {
+      // Force the next schedule to start at the analyze phase so we don't
+      // recharge Whisper.
+      await this.ctx.storage.put("job", {
+        ...job,
+        analyzeAttempts: attempts,
+        startPhase: "analyze",
+      });
+      await this.schedule(attempts * 30, "runJob");
+      return;
+    }
+    await this.ctx.storage.delete("job");
   }
 }
