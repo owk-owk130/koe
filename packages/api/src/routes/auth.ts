@@ -33,6 +33,13 @@ const auth = new Hono<Env>()
       return c.json({ status: "pending" as const }, 428);
     }
 
+    // `slow_down` means our poll cadence exceeded Google's limit; the client
+    // must increase its interval. We surface it as 428 so the Device Flow
+    // client loop stays in the polling state rather than erroring out.
+    if (result === "slow_down") {
+      return c.json({ status: "slow_down" as const }, 428);
+    }
+
     if (result === "expired") {
       throw new AppError(410, "EXPIRED", "Device code has expired");
     }

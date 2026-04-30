@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Mic } from "lucide-react";
 import { createClient } from "@koe/shared";
+import { API_URL } from "~/renderer/lib/api";
 import { useAuth } from "~/renderer/hooks/useAuth";
 
-const API_URL = "http://localhost:8787";
 const client = createClient(API_URL);
 
 type FlowState = "idle" | "polling" | "success" | "error";
@@ -19,8 +19,61 @@ export function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const intervalSecRef = useRef<number>(5);
+  const deviceCodeRef = useRef<string | null>(null);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  const scheduleNextPoll = useCallback(
+    (seconds: number) => {
+      clearTimer();
+      timerRef.current = setInterval(async () => {
+        if (!deviceCodeRef.current) return;
+        try {
+          const tokenRes = await client.auth.token.$post({
+            json: { device_code: deviceCodeRef.current },
+          });
+
+          if (tokenRes.status === 428) {
+            // Parse body to distinguish `slow_down` from `pending`. When Google
+            // signals slow_down we must increase the polling interval (Device
+            // Flow spec: add at least 5s), otherwise we keep tripping the same
+            // rate limit.
+            const body = (await tokenRes.json().catch(() => null)) as { status?: string } | null;
+            if (body?.status === "slow_down") {
+              intervalSecRef.current += 5;
+              scheduleNextPoll(intervalSecRef.current);
+            }
+            return;
+          }
+
+          const result = await tokenRes.json();
+          if ("token" in result) {
+            clearTimer();
+            setFlowState("success");
+            await login(result.token);
+          }
+        } catch (e) {
+          clearTimer();
+          setFlowState("error");
+          setError(e instanceof Error ? e.message : "Authentication failed");
+        }
+      }, seconds * 1000);
+    },
+    [clearTimer, login],
+  );
 
   const startFlow = useCallback(async () => {
+    // Clear any previously-running poll loop before starting a new one —
+    // calling startFlow twice (e.g. retry button) would otherwise orphan the
+    // first timer and cause simultaneous polling, which trips Google's
+    // `slow_down` rate limit.
+    clearTimer();
     setError(null);
     setFlowState("idle");
     try {
@@ -29,32 +82,14 @@ export function AuthScreen() {
       setDeviceCode(code);
       setFlowState("polling");
 
-      timerRef.current = setInterval(
-        async () => {
-          try {
-            const tokenRes = await client.auth.token.$post({
-              json: { device_code: code.device_code },
-            });
-            if (tokenRes.status === 428) return;
-            const result = await tokenRes.json();
-            if ("token" in result) {
-              if (timerRef.current) clearInterval(timerRef.current);
-              setFlowState("success");
-              await login(result.token);
-            }
-          } catch (e) {
-            if (timerRef.current) clearInterval(timerRef.current);
-            setFlowState("error");
-            setError(e instanceof Error ? e.message : "Authentication failed");
-          }
-        },
-        (code.interval || 5) * 1000,
-      );
+      deviceCodeRef.current = code.device_code;
+      intervalSecRef.current = code.interval || 5;
+      scheduleNextPoll(intervalSecRef.current);
     } catch (e) {
       setFlowState("error");
       setError(e instanceof Error ? e.message : "Failed to start authentication");
     }
-  }, [login]);
+  }, [clearTimer, scheduleNextPoll]);
 
   useEffect(() => {
     return () => {

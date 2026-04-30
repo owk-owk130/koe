@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/pipeline"
 )
@@ -37,7 +39,9 @@ func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (h *Handler) handleProcess(w http.ResponseWriter, r *http.Request) {
-	// Save request body to a temp file (streaming, no full buffering)
+	start := time.Now()
+	log.Printf("[process] start content-type=%q", r.Header.Get("Content-Type"))
+
 	tmpDir, err := os.MkdirTemp("", "koe-process-*")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "create temp dir: "+err.Error())
@@ -64,15 +68,24 @@ func (h *Handler) handleProcess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "empty audio body")
 		return
 	}
+	log.Printf("[process] audio saved bytes=%d elapsed=%s path=%s", n, time.Since(start), audioPath)
 
 	result, err := h.Runner.Run(r.Context(), pipeline.Input{AudioPath: audioPath})
 	if err != nil {
+		log.Printf("[process] pipeline failed after %s: %v", time.Since(start), err)
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("pipeline failed: %v", err))
 		return
 	}
+	log.Printf(
+		"[process] pipeline ok chunks=%d topics=%d elapsed=%s",
+		len(result.Chunks),
+		len(result.Topics),
+		time.Since(start),
+	)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+	log.Printf("[process] done elapsed=%s", time.Since(start))
 }
 
 func (h *Handler) handleMethodNotAllowed(w http.ResponseWriter, _ *http.Request) {

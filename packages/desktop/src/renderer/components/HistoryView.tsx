@@ -1,24 +1,21 @@
 import { useState } from "react";
 import { ArrowLeft, History, Trash2 } from "lucide-react";
 import { formatDate, formatDuration } from "@koe/shared";
-import {
-  useDeleteLocalJob,
-  useLocalHistory,
-  useLocalJobDetail,
-} from "~/renderer/hooks/useLocalHistory";
+import { useDeleteJob, useJob, useJobTopics, useJobs } from "~/renderer/hooks/useJobs";
+import { StatusBadge } from "./StatusBadge";
 
-export function LocalHistoryView() {
+export function HistoryView() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   if (selectedId) {
-    return <LocalJobDetailView jobId={selectedId} onBack={() => setSelectedId(null)} />;
+    return <JobDetailView jobId={selectedId} onBack={() => setSelectedId(null)} />;
   }
-  return <LocalHistoryList onSelect={setSelectedId} />;
+  return <JobList onSelect={setSelectedId} />;
 }
 
-function LocalHistoryList({ onSelect }: { onSelect: (id: string) => void }) {
-  const { data, isLoading, error } = useLocalHistory();
-  const jobs = data ?? [];
+function JobList({ onSelect }: { onSelect: (id: string) => void }) {
+  const { data, isLoading, error } = useJobs();
+  const jobs = data?.jobs ?? [];
 
   return (
     <div className="flex flex-1 flex-col gap-5 p-6">
@@ -46,17 +43,20 @@ function LocalHistoryList({ onSelect }: { onSelect: (id: string) => void }) {
             <button
               key={job.id}
               onClick={() => onSelect(job.id)}
-              className="flex w-full flex-col gap-1 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4 text-left hover:border-brand/30"
+              className="flex w-full flex-col gap-1.5 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4 text-left hover:border-brand/30"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <span className="truncate text-[13px] font-semibold text-text-primary">
-                  {formatDate(job.createdAt)}
+                  {formatDate(job.created_at)}
                 </span>
-                {job.audioDurationSec != null && (
-                  <span className="shrink-0 font-mono text-[11px] text-text-secondary">
-                    {formatDuration(job.audioDurationSec)}
-                  </span>
-                )}
+                <div className="flex shrink-0 items-center gap-2">
+                  {job.audio_duration_sec != null && (
+                    <span className="font-mono text-[11px] text-text-secondary">
+                      {formatDuration(job.audio_duration_sec)}
+                    </span>
+                  )}
+                  <StatusBadge status={job.status} />
+                </div>
               </div>
               {job.summary && (
                 <p className="line-clamp-2 text-xs leading-relaxed text-text-secondary">
@@ -71,22 +71,24 @@ function LocalHistoryList({ onSelect }: { onSelect: (id: string) => void }) {
   );
 }
 
-function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
-  const { data, isLoading, error } = useLocalJobDetail(jobId);
-  const deleteJob = useDeleteLocalJob();
+function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
+  const jobQuery = useJob(jobId);
+  const job = jobQuery.data;
+  const topicsQuery = useJobTopics(jobId, job?.status === "completed");
+  const deleteJob = useDeleteJob();
   const [confirming, setConfirming] = useState(false);
 
-  if (isLoading) {
+  if (jobQuery.isLoading) {
     return <p className="p-6 text-xs text-text-secondary">読み込み中...</p>;
   }
-  if (error) {
-    return <p className="p-6 text-xs text-error">{error.message}</p>;
+  if (jobQuery.error) {
+    return <p className="p-6 text-xs text-error">{jobQuery.error.message}</p>;
   }
-  if (!data) {
+  if (!job) {
     return <p className="p-6 text-xs text-text-secondary">見つかりませんでした</p>;
   }
 
-  const { job, topics, chunks } = data;
+  const topics = topicsQuery.data?.topics ?? [];
 
   const handleConfirmDelete = () => {
     deleteJob.mutate(jobId, {
@@ -109,12 +111,15 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
 
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-text-primary">{formatDate(job.createdAt)}</h1>
-          {job.audioDurationSec != null && (
-            <p className="mt-1 font-mono text-[11px] text-text-secondary">
-              {formatDuration(job.audioDurationSec)}
-            </p>
-          )}
+          <h1 className="text-xl font-semibold text-text-primary">{formatDate(job.created_at)}</h1>
+          <div className="mt-1.5 flex items-center gap-2">
+            <StatusBadge status={job.status} />
+            {job.audio_duration_sec != null && (
+              <span className="font-mono text-[11px] text-text-secondary">
+                {formatDuration(job.audio_duration_sec)}
+              </span>
+            )}
+          </div>
         </div>
         <button
           type="button"
@@ -138,6 +143,10 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
         />
       )}
 
+      {job.status === "failed" && job.error && (
+        <p className="rounded-[8px] bg-error/10 p-3 text-xs text-error">{job.error}</p>
+      )}
+
       {job.summary && (
         <div className="rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
           <h2 className="text-[13px] font-semibold text-text-primary">サマリー</h2>
@@ -158,9 +167,9 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
               >
                 <div className="flex items-start justify-between gap-3">
                   <h4 className="text-[13px] font-semibold text-text-primary">{topic.title}</h4>
-                  {topic.startSec !== null && topic.endSec !== null && (
+                  {topic.start_sec !== null && topic.end_sec !== null && (
                     <span className="shrink-0 font-mono text-[11px] text-text-secondary">
-                      {formatDuration(topic.startSec)} - {formatDuration(topic.endSec)}
+                      {formatDuration(topic.start_sec)} - {formatDuration(topic.end_sec)}
                     </span>
                   )}
                 </div>
@@ -172,29 +181,13 @@ function LocalJobDetailView({ jobId, onBack }: { jobId: string; onBack: () => vo
                 {topic.detail && (
                   <p className="mt-2 text-xs leading-relaxed text-text-primary">{topic.detail}</p>
                 )}
+                {topic.transcript && (
+                  <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-text-primary">
+                    {topic.transcript}
+                  </p>
+                )}
               </div>
             ))}
-          </div>
-        </>
-      )}
-
-      {chunks.length > 0 && (
-        <>
-          <h2 className="text-[15px] font-semibold text-text-primary">トランスクリプト</h2>
-          <div className="rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
-            <div className="space-y-2">
-              {chunks.map((chunk) => (
-                <p
-                  key={chunk.id}
-                  className="whitespace-pre-wrap text-[13px] leading-relaxed text-text-primary"
-                >
-                  <span className="mr-2 font-mono text-[11px] text-text-secondary">
-                    {formatDuration(chunk.startSec)}
-                  </span>
-                  {chunk.transcript ?? ""}
-                </p>
-              ))}
-            </div>
           </div>
         </>
       )}
@@ -229,8 +222,7 @@ function DeleteConfirmDialog({
           この履歴を削除しますか？
         </h2>
         <p className="mt-2 text-xs leading-relaxed text-text-secondary">
-          この履歴を削除します。クラウドに同期済みの場合はサーバー側からも削除されます。
-          この操作は取り消せません。
+          サーバー上の音声とトピックを削除します。この操作は取り消せません。
         </p>
         {errorMessage && (
           <p className="mt-3 rounded-[8px] bg-error/10 p-2 text-xs text-error">{errorMessage}</p>
