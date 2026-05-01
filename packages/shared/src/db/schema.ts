@@ -11,6 +11,22 @@ export const users = sqliteTable("users", {
   createdAt: text("created_at").notNull().default(defaultNow),
 });
 
+// Two-phase pipeline status flow:
+//   pending → transcribing → transcribed → analyzing → completed
+//                   ↓                ↓
+//          transcribe_failed   analyze_failed
+// 'failed' is retained for legacy single-phase rows; the orchestrator never
+// produces it for new jobs.
+export type JobStatus =
+  | "pending"
+  | "transcribing"
+  | "transcribed"
+  | "analyzing"
+  | "completed"
+  | "transcribe_failed"
+  | "analyze_failed"
+  | "failed";
+
 export const jobs = sqliteTable(
   "jobs",
   {
@@ -18,13 +34,14 @@ export const jobs = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
-    status: text("status").notNull().default("pending"),
+    status: text("status").notNull().default("pending").$type<JobStatus>(),
     audioKey: text("audio_key").notNull(),
     audioDurationSec: real("audio_duration_sec"),
     totalChunks: integer("total_chunks"),
     completedChunks: integer("completed_chunks").default(0),
     error: text("error"),
     summary: text("summary"),
+    transcriptKey: text("transcript_key"),
     createdAt: text("created_at").notNull().default(defaultNow),
     updatedAt: text("updated_at").notNull().default(defaultNow),
   },

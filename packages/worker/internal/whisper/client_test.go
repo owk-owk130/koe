@@ -2,6 +2,7 @@ package whisper
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -134,13 +135,40 @@ func TestClient_Transcribe_WorkersAI(t *testing.T) {
 			t.Errorf("expected cf-aig-authorization 'Bearer test-key', got %q", got)
 		}
 
-		if ct := r.Header.Get("Content-Type"); ct != "audio/mpeg" {
-			t.Errorf("expected Content-Type 'audio/mpeg', got %q", ct)
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type 'application/json', got %q", ct)
 		}
 
-		body, _ := io.ReadAll(r.Body)
-		if string(body) != "fake audio data" {
-			t.Errorf("unexpected body: %q", string(body))
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+
+		// audio is base64 of the file bytes
+		audioB64, ok := payload["audio"].(string)
+		if !ok {
+			t.Fatalf("audio field missing or not string: %v", payload["audio"])
+		}
+		decoded, err := base64.StdEncoding.DecodeString(audioB64)
+		if err != nil {
+			t.Fatalf("audio not valid base64: %v", err)
+		}
+		if string(decoded) != "fake audio data" {
+			t.Errorf("decoded audio = %q, want 'fake audio data'", string(decoded))
+		}
+
+		// hallucination guards default to recommended values
+		if got := payload["language"]; got != "ja" {
+			t.Errorf("language = %v, want 'ja'", got)
+		}
+		if got := payload["task"]; got != "transcribe" {
+			t.Errorf("task = %v, want 'transcribe'", got)
+		}
+		if got := payload["vad_filter"]; got != true {
+			t.Errorf("vad_filter = %v, want true", got)
+		}
+		if got := payload["condition_on_previous_text"]; got != false {
+			t.Errorf("condition_on_previous_text = %v, want false", got)
 		}
 
 		resp := workersAIResponse{
@@ -180,6 +208,47 @@ func TestClient_Transcribe_WorkersAI(t *testing.T) {
 		t.Fatalf("expected 2 segments, got %d", len(result.Segments))
 	}
 }
+
+// Custom params override defaults and optional knobs are forwarded.
+func TestClient_Transcribe_WorkersAI_CustomParams(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if got := payload["language"]; got != "en" {
+			t.Errorf("language = %v, want 'en'", got)
+		}
+		if got := payload["vad_filter"]; got != false {
+			t.Errorf("vad_filter = %v, want false (override)", got)
+		}
+		if got := payload["compression_ratio_threshold"]; got != 1.8 {
+			t.Errorf("compression_ratio_threshold = %v, want 1.8", got)
+		}
+		if got := payload["initial_prompt"]; got != "context" {
+			t.Errorf("initial_prompt = %v, want 'context'", got)
+		}
+		json.NewEncoder(w).Encode(workersAIResponse{Success: true, Result: workersAIResult{Text: "ok"}})
+	}))
+	defer srv.Close()
+
+	tmpDir := t.TempDir()
+	audioFile := filepath.Join(tmpDir, "test.mp3")
+	os.WriteFile(audioFile, []byte("x"), 0o644)
+
+	client := &Client{
+		BaseURL: srv.URL, APIKey: "k", Model: "@cf/openai/whisper-large-v3-turbo",
+		Language:                  "en",
+		VADFilter:                 boolPtr(false),
+		CompressionRatioThreshold: 1.8,
+		InitialPrompt:             "context",
+	}
+	if _, err := client.Transcribe(context.Background(), audioFile); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
 
 func TestClient_Transcribe_WorkersAI_Error(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

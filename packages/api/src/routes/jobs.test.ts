@@ -218,3 +218,81 @@ describe("DELETE /api/v1/jobs/:id", () => {
     expect(rows.results.length).toBe(1);
   });
 });
+
+describe("POST /api/v1/jobs/:id/analyze", () => {
+  const insertJobInState = async (id: string, status: string, userId = "jobs-user-1") => {
+    await env.DB.prepare(
+      "INSERT INTO jobs (id, user_id, status, audio_key, transcript_key) VALUES (?, ?, ?, ?, ?)",
+    )
+      .bind(
+        id,
+        userId,
+        status,
+        `${userId}/audio/${id}/original.mp3`,
+        `${userId}/results/${id}/transcript.json`,
+      )
+      .run();
+  };
+
+  it("returns 401 without auth", async () => {
+    await insertJobInState("an-401", "transcribed");
+    const res = await app.request("/api/v1/jobs/an-401/analyze", { method: "POST" }, makeEnv());
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 for a job owned by someone else", async () => {
+    await createUser(env.DB, {
+      id: "jobs-user-other-2",
+      googleId: "g-jobs-other-2",
+      email: "other2@test.com",
+      name: "Other",
+    });
+    await insertJobInState("an-other", "transcribed", "jobs-user-other-2");
+
+    const res = await app.request(
+      "/api/v1/jobs/an-other/analyze",
+      { method: "POST", headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 for a non-existent job", async () => {
+    const res = await app.request(
+      "/api/v1/jobs/nope/analyze",
+      { method: "POST", headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when the job has not finished transcribing", async () => {
+    await insertJobInState("an-409", "transcribing");
+    const res = await app.request(
+      "/api/v1/jobs/an-409/analyze",
+      { method: "POST", headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it("returns 202 when the job is transcribed", async () => {
+    await insertJobInState("an-202-tx", "transcribed");
+    const res = await app.request(
+      "/api/v1/jobs/an-202-tx/analyze",
+      { method: "POST", headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(202);
+  });
+
+  it("returns 202 when the job previously failed analyze", async () => {
+    await insertJobInState("an-202-failed", "analyze_failed");
+    const res = await app.request(
+      "/api/v1/jobs/an-202-failed/analyze",
+      { method: "POST", headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(202);
+  });
+});

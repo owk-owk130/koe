@@ -1,4 +1,4 @@
-import { chunks, jobs, topics } from "@koe/shared/db";
+import { chunks, jobs, type JobStatus, topics } from "@koe/shared/db";
 import { and, asc, desc, eq, or, sql } from "drizzle-orm";
 import { getDb } from "~/lib/db";
 
@@ -48,7 +48,7 @@ export const listJobsByUser = async (
 export const updateJobStatus = async (
   d1: D1Database,
   id: string,
-  status: string,
+  status: JobStatus,
   error?: string,
 ): Promise<void> => {
   const db = getDb(d1);
@@ -62,16 +62,79 @@ export const updateJobStatus = async (
     .where(eq(jobs.id, id));
 };
 
-// Atomic state transition: pending → processing.
-// Used by the background processor to guarantee a single worker processes a job.
-export const claimJobForProcessing = async (d1: D1Database, id: string): Promise<boolean> => {
+// Atomic transition for the transcribe phase: pending or transcribe_failed → transcribing.
+// Accepting transcribe_failed lets the orchestrator retry without going through pending.
+// Clears any stale error so the new attempt starts clean.
+export const claimJobForTranscribe = async (d1: D1Database, id: string): Promise<boolean> => {
   const db = getDb(d1);
   const rows = await db
     .update(jobs)
-    .set({ status: "processing", updatedAt: sql`(datetime('now'))` })
-    .where(and(eq(jobs.id, id), eq(jobs.status, "pending")))
+    .set({ status: "transcribing", error: null, updatedAt: sql`(datetime('now'))` })
+    .where(
+      and(eq(jobs.id, id), or(eq(jobs.status, "pending"), eq(jobs.status, "transcribe_failed"))),
+    )
     .returning({ id: jobs.id });
   return rows.length > 0;
+};
+
+// Records the persisted transcript artifact and moves the job into the analyze-eligible
+// state. completedChunks is set to totalChunks because all chunks transcribed successfully
+// by the time we reach this state.
+export const markAsTranscribed = async (
+  d1: D1Database,
+  id: string,
+  input: { transcriptKey: string; totalChunks: number },
+): Promise<void> => {
+  const db = getDb(d1);
+  await db
+    .update(jobs)
+    .set({
+      status: "transcribed",
+      transcriptKey: input.transcriptKey,
+      totalChunks: input.totalChunks,
+      completedChunks: input.totalChunks,
+      error: null,
+      updatedAt: sql`(datetime('now'))`,
+    })
+    .where(eq(jobs.id, id));
+};
+
+// Atomic transition for the analyze phase: transcribed or analyze_failed → analyzing.
+// analyze_failed is also accepted so manual `POST /jobs/:id/analyze` retries succeed.
+export const claimJobForAnalyze = async (d1: D1Database, id: string): Promise<boolean> => {
+  const db = getDb(d1);
+  const rows = await db
+    .update(jobs)
+    .set({ status: "analyzing", error: null, updatedAt: sql`(datetime('now'))` })
+    .where(
+      and(eq(jobs.id, id), or(eq(jobs.status, "transcribed"), eq(jobs.status, "analyze_failed"))),
+    )
+    .returning({ id: jobs.id });
+  return rows.length > 0;
+};
+
+export const markAsTranscribeFailed = async (
+  d1: D1Database,
+  id: string,
+  error: string,
+): Promise<void> => {
+  const db = getDb(d1);
+  await db
+    .update(jobs)
+    .set({ status: "transcribe_failed", error, updatedAt: sql`(datetime('now'))` })
+    .where(eq(jobs.id, id));
+};
+
+export const markAsAnalyzeFailed = async (
+  d1: D1Database,
+  id: string,
+  error: string,
+): Promise<void> => {
+  const db = getDb(d1);
+  await db
+    .update(jobs)
+    .set({ status: "analyze_failed", error, updatedAt: sql`(datetime('now'))` })
+    .where(eq(jobs.id, id));
 };
 
 export const completeJob = async (

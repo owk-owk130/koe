@@ -12,11 +12,15 @@ import (
 	"time"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/pipeline"
+	"github.com/owk-owk130/koe/packages/worker/internal/whisper"
 )
 
-// Runner abstracts pipeline execution for testability.
+// Runner abstracts the two pipeline phases for testability.
+// /transcribe → Transcribe (split + whisper)
+// /analyze    → Analyze (gemini, given pre-computed segments)
 type Runner interface {
-	Run(ctx context.Context, in pipeline.Input) (*pipeline.Result, error)
+	Transcribe(ctx context.Context, audioPath string) (*pipeline.TranscribeOutput, error)
+	Analyze(ctx context.Context, segments []whisper.Segment) (*pipeline.AnalyzeOutput, error)
 }
 
 // Handler holds HTTP handler dependencies.
@@ -28,8 +32,13 @@ type Handler struct {
 func (h *Handler) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", h.handleHealth)
-	mux.HandleFunc("POST /process", h.handleProcess)
-	mux.HandleFunc("/process", h.handleMethodNotAllowed)
+
+	mux.HandleFunc("POST /transcribe", h.handleTranscribe)
+	mux.HandleFunc("/transcribe", h.handleMethodNotAllowed)
+
+	mux.HandleFunc("POST /analyze", h.handleAnalyze)
+	mux.HandleFunc("/analyze", h.handleMethodNotAllowed)
+
 	return mux
 }
 
@@ -38,11 +47,11 @@ func (h *Handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Write([]byte(`{"status":"ok"}`))
 }
 
-func (h *Handler) handleProcess(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	log.Printf("[process] start content-type=%q", r.Header.Get("Content-Type"))
+	log.Printf("[transcribe] start content-type=%q", r.Header.Get("Content-Type"))
 
-	tmpDir, err := os.MkdirTemp("", "koe-process-*")
+	tmpDir, err := os.MkdirTemp("", "koe-transcribe-*")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "create temp dir: "+err.Error())
 		return
@@ -68,24 +77,52 @@ func (h *Handler) handleProcess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "empty audio body")
 		return
 	}
-	log.Printf("[process] audio saved bytes=%d elapsed=%s path=%s", n, time.Since(start), audioPath)
+	log.Printf("[transcribe] audio saved bytes=%d elapsed=%s path=%s", n, time.Since(start), audioPath)
 
-	result, err := h.Runner.Run(r.Context(), pipeline.Input{AudioPath: audioPath})
+	out, err := h.Runner.Transcribe(r.Context(), audioPath)
 	if err != nil {
-		log.Printf("[process] pipeline failed after %s: %v", time.Since(start), err)
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("pipeline failed: %v", err))
+		log.Printf("[transcribe] failed after %s: %v", time.Since(start), err)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("transcribe failed: %v", err))
 		return
 	}
 	log.Printf(
-		"[process] pipeline ok chunks=%d topics=%d elapsed=%s",
-		len(result.Chunks),
-		len(result.Topics),
+		"[transcribe] ok chunks=%d elapsed=%s",
+		len(out.Chunks),
 		time.Since(start),
 	)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
-	log.Printf("[process] done elapsed=%s", time.Since(start))
+	json.NewEncoder(w).Encode(out)
+}
+
+type analyzeRequest struct {
+	Segments []whisper.Segment `json:"segments"`
+}
+
+func (h *Handler) handleAnalyze(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
+	var req analyzeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+		return
+	}
+	log.Printf("[analyze] start segments=%d", len(req.Segments))
+
+	out, err := h.Runner.Analyze(r.Context(), req.Segments)
+	if err != nil {
+		log.Printf("[analyze] failed after %s: %v", time.Since(start), err)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("analyze failed: %v", err))
+		return
+	}
+	log.Printf(
+		"[analyze] ok topics=%d elapsed=%s",
+		len(out.Topics),
+		time.Since(start),
+	)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 func (h *Handler) handleMethodNotAllowed(w http.ResponseWriter, _ *http.Request) {

@@ -54,11 +54,12 @@ packages/
 
 ```
 # ジョブ
-POST /api/v1/jobs              # ジョブ作成（multipart form で音声送信）→ DO alarm で非同期処理
-GET  /api/v1/jobs              # ジョブ一覧（自分のだけ）
-GET  /api/v1/jobs/:id          # ジョブ詳細
-DELETE /api/v1/jobs/:id        # ジョブ削除（R2 → D1 の順）
-GET  /api/v1/jobs/:id/topics   # トピック一覧
+POST   /api/v1/jobs              # ジョブ作成（multipart form で音声送信）→ DO で非同期処理
+GET    /api/v1/jobs              # ジョブ一覧（自分のだけ）
+GET    /api/v1/jobs/:id          # ジョブ詳細
+DELETE /api/v1/jobs/:id          # ジョブ削除（R2 → D1 の順）
+POST   /api/v1/jobs/:id/analyze  # analyze だけ再実行（transcribed / analyze_failed のみ）
+GET    /api/v1/jobs/:id/topics   # トピック一覧
 
 # R2 Multipart Upload（大容量音声、将来用）
 POST /api/v1/uploads                        # アップロード開始
@@ -97,10 +98,16 @@ ALL  /mcp                      # Claude Desktop / モバイル向けリモート
 ### ジョブ状態遷移
 
 ```
-pending → processing → completed
-   ↓          ↓
- failed     failed (リトライ max 3回、指数バックオフ)
+pending → transcribing → transcribed → analyzing → completed
+                  ↓                ↓
+        transcribe_failed   analyze_failed
+                                  ↑              ↓
+                                  └─ POST /jobs/:id/analyze で再実行可能
 ```
+
+- 各 phase 独立で max 3 回までリトライ、線形 backoff (30/60/90s)
+- analyze 失敗時は transcript を R2 に保持したまま、Whisper を再課金せず Gemini だけ再実行できる
+- `failed` は legacy 単一フェーズ用の値（新オーケストレーターでは出力しない）
 
 ### 設計方針
 
@@ -109,6 +116,7 @@ pending → processing → completed
 - 長時間音声はチャンク分割（静音検出 + 時間上限）で対応
 - 大容量ファイルは R2 Multipart Upload で対応（Desktop v1 では未使用）
 - ジョブは冪等性を担保（チャンクID + 状態管理）
+- transcribe (Whisper) と analyze (Gemini) は独立 phase で動く。transcribe 完了時点で transcript.json を R2 に commit し、analyze で失敗しても Whisper を再課金しない
 - 進捗通知はポーリング + ステータスAPI
 
 ## Coding Rules

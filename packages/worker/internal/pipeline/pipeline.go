@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/splitter"
@@ -27,7 +28,21 @@ type ChunkResult struct {
 	Text     string  `json:"text"`
 }
 
-// Result represents the output of a pipeline run.
+// TranscribeOutput is the persisted artifact of the Whisper-only phase.
+// The orchestrator uploads this to R2 between phases so analyze can resume
+// without redoing transcription on Gemini failures.
+type TranscribeOutput struct {
+	Transcript whisper.Transcript `json:"transcript"`
+	Chunks     []ChunkResult      `json:"chunks"`
+}
+
+// AnalyzeOutput is the result of running Gemini on pre-computed segments.
+type AnalyzeOutput struct {
+	Summary string        `json:"summary"`
+	Topics  []topic.Topic `json:"topics"`
+}
+
+// Result represents the output of a full pipeline run (CLI / sidecar / mcp).
 type Result struct {
 	Transcript whisper.Transcript `json:"transcript"`
 	Summary    string             `json:"summary"`
@@ -43,19 +58,18 @@ type Pipeline struct {
 	Storage     storage.Storage // nil for CLI mode (no persistence)
 }
 
-// Run executes the full pipeline: split → transcribe → analyze.
-func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
-	// 1. Split audio into chunks
+// Transcribe runs split + Whisper. Kept separate so the server can persist its
+// output and let analyze resume without re-charging Whisper on Gemini failures.
+func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*TranscribeOutput, error) {
 	splitStart := time.Now()
-	chunks, err := p.Splitter.Split(ctx, in.AudioPath)
+	chunks, err := p.Splitter.Split(ctx, audioPath)
 	if err != nil {
 		return nil, fmt.Errorf("split: %w", err)
 	}
 	log.Printf("[pipeline] split done chunks=%d elapsed=%s", len(chunks), time.Since(splitStart))
 
-	// 2. Transcribe each chunk
 	var allSegments []whisper.Segment
-	var fullText string
+	var fullText strings.Builder
 	chunkResults := make([]ChunkResult, 0, len(chunks))
 
 	for _, chunk := range chunks {
@@ -72,8 +86,14 @@ func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
 			chunk.EndSec,
 			time.Since(chunkStart),
 		)
-		fullText += t.Text + "\n"
-		allSegments = append(allSegments, t.Segments...)
+		fullText.WriteString(t.Text)
+		fullText.WriteByte('\n')
+		// Whisper returns chunk-local timestamps; shift onto the global timeline.
+		for _, seg := range t.Segments {
+			seg.StartSec += chunk.StartSec
+			seg.EndSec += chunk.StartSec
+			allSegments = append(allSegments, seg)
+		}
 		chunkResults = append(chunkResults, ChunkResult{
 			Index:    chunk.Index,
 			StartSec: chunk.StartSec,
@@ -82,14 +102,26 @@ func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
 		})
 	}
 
-	transcript := whisper.Transcript{
-		Text:     fullText,
-		Segments: allSegments,
-	}
+	return &TranscribeOutput{
+		Transcript: whisper.Transcript{Text: fullText.String(), Segments: allSegments},
+		Chunks:     chunkResults,
+	}, nil
+}
 
-	// 3. Analyze topics
+// Analyze runs the topic analyzer on pre-computed segments. The transcript
+// argument expected by the Analyzer interface is rebuilt from segments so the
+// caller doesn't need to pass it twice.
+func (p *Pipeline) Analyze(
+	ctx context.Context,
+	segments []whisper.Segment,
+) (*AnalyzeOutput, error) {
 	analyzeStart := time.Now()
-	analysis, err := p.Analyzer.Analyze(ctx, fullText, allSegments)
+	var fullText strings.Builder
+	for _, s := range segments {
+		fullText.WriteString(s.Text)
+		fullText.WriteByte('\n')
+	}
+	analysis, err := p.Analyzer.Analyze(ctx, fullText.String(), segments)
 	if err != nil {
 		return nil, fmt.Errorf("analyze: %w", err)
 	}
@@ -98,11 +130,23 @@ func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
 		len(analysis.Topics),
 		time.Since(analyzeStart),
 	)
+	return &AnalyzeOutput{Summary: analysis.Summary, Topics: analysis.Topics}, nil
+}
 
+// Run executes the full pipeline (transcribe + analyze) for CLI/sidecar/mcp use.
+func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
+	t, err := p.Transcribe(ctx, in.AudioPath)
+	if err != nil {
+		return nil, err
+	}
+	a, err := p.Analyze(ctx, t.Transcript.Segments)
+	if err != nil {
+		return nil, err
+	}
 	return &Result{
-		Transcript: transcript,
-		Summary:    analysis.Summary,
-		Topics:     analysis.Topics,
-		Chunks:     chunkResults,
+		Transcript: t.Transcript,
+		Summary:    a.Summary,
+		Topics:     a.Topics,
+		Chunks:     t.Chunks,
 	}, nil
 }

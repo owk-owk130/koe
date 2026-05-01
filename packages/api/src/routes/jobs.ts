@@ -151,6 +151,44 @@ const jobs = new Hono<Env>()
         transcript: t.transcript,
       })),
     });
+  })
+  // Re-runs the analyze phase for a job whose transcript has already been
+  // persisted. Useful when Gemini failed (analyze_failed) or when the user
+  // wants a fresh summary without paying for Whisper again.
+  .post("/:id/analyze", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    const jobId = c.req.param("id");
+
+    const job = await findJobById(c.env.DB, jobId);
+    if (!job || job.userId !== user.id) {
+      throw new AppError(404, "NOT_FOUND", "Job not found");
+    }
+
+    if (job.status !== "transcribed" && job.status !== "analyze_failed") {
+      throw new AppError(
+        409,
+        "INVALID_STATE",
+        `Cannot analyze a job in state "${job.status}". This endpoint only accepts jobs in "transcribed" or "analyze_failed" state.`,
+      );
+    }
+
+    try {
+      if (c.env.PROCESSOR) {
+        c.executionCtx.waitUntil(
+          enqueueJob(c.env.PROCESSOR, {
+            jobId: job.id,
+            userId: user.id,
+            audioKey: job.audioKey,
+            startPhase: "analyze",
+          }),
+        );
+      }
+    } catch {
+      // executionCtx not available (e.g. in tests) — caller can poll status anyway.
+    }
+
+    return c.json({ id: job.id, status: job.status }, 202);
   });
 
 export default jobs;

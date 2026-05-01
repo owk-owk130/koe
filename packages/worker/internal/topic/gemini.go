@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/whisper"
 )
@@ -115,10 +116,6 @@ const analysisSystemInstruction = `あなたは音声会話の構造化分析器
 - 冒頭に中心トピックを 3 行以内の箇条書き（各行 先頭に「- 」）で書く
 - 元データに気になった点（重複・欠損・不整合・途中で切れているなど）があれば、箇条書きの後に改行して「> メモ: ...」の 1 行を追記する。無ければ書かない
 
-## transcript フィールド
-- transcript は該当する時間範囲のセグメントテキストを元の順で連結したもの（原文保持）
-- summary/detail と異なり、transcript では誤認識の補正を行わない
-
 ## エッジケース
 - 有意味な発話がほぼ無い場合は summary にその旨を書き、topics は空配列にする
 - 入力全体が1つの話題なら topics は1件にする
@@ -129,6 +126,11 @@ func buildUserPrompt(segments []whisper.Segment) string {
 	return fmt.Sprintf("以下のタイムスタンプ付きセグメントを分析し、全体の要約とトピック分割を行ってください。\n\n%s", segJSON)
 }
 
+// analysisResponseSchema asks Gemini for boundaries only. The transcript field
+// is intentionally absent: making the LLM re-emit raw audio inflates output
+// tokens and triggered repeated JSON truncation / escape failures (Whisper
+// hallucination loops were copied verbatim into the response). The server
+// reconstructs each topic's transcript from segments after parsing.
 func analysisResponseSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
@@ -142,22 +144,35 @@ func analysisResponseSchema() map[string]any {
 				"items": map[string]any{
 					"type": "object",
 					"properties": map[string]any{
-						"index":      map[string]any{"type": "integer", "description": "0始まりの連番"},
-						"title":      map[string]any{"type": "string", "description": "トピックのタイトル(簡潔に)"},
-						"summary":    map[string]any{"type": "string", "description": "トピックの要約(1-2文。具体的な中身を書く)"},
-						"detail":     map[string]any{"type": "string", "description": "トピックの詳細な要約(内容を整理し自分の言葉でまとめる)"},
-						"start_sec":  map[string]any{"type": "number", "description": "開始時刻(秒)"},
-						"end_sec":    map[string]any{"type": "number", "description": "終了時刻(秒)"},
-						"transcript": map[string]any{"type": "string", "description": "該当セグメントのテキストを元の順で連結"},
+						"index":     map[string]any{"type": "integer", "description": "0始まりの連番"},
+						"title":     map[string]any{"type": "string", "description": "トピックのタイトル(簡潔に)"},
+						"summary":   map[string]any{"type": "string", "description": "トピックの要約(1-2文。具体的な中身を書く)"},
+						"detail":    map[string]any{"type": "string", "description": "トピックの詳細な要約(内容を整理し自分の言葉でまとめる)"},
+						"start_sec": map[string]any{"type": "number", "description": "開始時刻(秒)"},
+						"end_sec":   map[string]any{"type": "number", "description": "終了時刻(秒)"},
 					},
-					"required":         []string{"index", "title", "summary", "detail", "start_sec", "end_sec", "transcript"},
-					"propertyOrdering": []string{"index", "title", "summary", "detail", "start_sec", "end_sec", "transcript"},
+					"required":         []string{"index", "title", "summary", "detail", "start_sec", "end_sec"},
+					"propertyOrdering": []string{"index", "title", "summary", "detail", "start_sec", "end_sec"},
 				},
 			},
 		},
 		"required":         []string{"summary", "topics"},
 		"propertyOrdering": []string{"summary", "topics"},
 	}
+}
+
+// transcriptForRange returns the original segment text concatenated by newlines
+// for segments whose start time falls within [startSec, endSec). Using the
+// segment start (not midpoint) keeps the output stable when topic boundaries
+// align with segment boundaries, which the LLM is told to do.
+func transcriptForRange(segments []whisper.Segment, startSec, endSec float64) string {
+	var lines []string
+	for _, s := range segments {
+		if s.StartSec >= startSec && s.StartSec < endSec {
+			lines = append(lines, s.Text)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Analyze implements the Analyzer interface.
@@ -217,6 +232,11 @@ func (g *GeminiAnalyzer) Analyze(ctx context.Context, transcript string, segment
 	var result AnalysisResult
 	if err := json.Unmarshal([]byte(text), &result); err != nil {
 		return nil, fmt.Errorf("parse analysis JSON: %w (raw: %s)", err, text)
+	}
+
+	for i := range result.Topics {
+		t := &result.Topics[i]
+		t.Transcript = transcriptForRange(segments, t.StartSec, t.EndSec)
 	}
 
 	return &result, nil
