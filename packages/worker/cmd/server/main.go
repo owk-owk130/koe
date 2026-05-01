@@ -12,7 +12,6 @@ import (
 	"github.com/owk-owk130/koe/packages/worker/internal/pipeline"
 	"github.com/owk-owk130/koe/packages/worker/internal/server"
 	"github.com/owk-owk130/koe/packages/worker/internal/splitter"
-	"github.com/owk-owk130/koe/packages/worker/internal/topic"
 	"github.com/owk-owk130/koe/packages/worker/internal/whisper"
 )
 
@@ -20,8 +19,6 @@ func main() {
 	whisperURL := os.Getenv("WHISPER_BASE_URL")
 	whisperKey := os.Getenv("WHISPER_API_KEY")
 	whisperModel := os.Getenv("WHISPER_MODEL")
-	geminiKey := os.Getenv("GEMINI_API_KEY")
-	geminiModel := envOrDefault("GEMINI_MODEL", "gemini-2.0-flash-lite")
 	port := envOrDefault("PORT", "8080")
 
 	if whisperURL == "" {
@@ -32,9 +29,6 @@ func main() {
 	}
 	if whisperModel == "" {
 		log.Fatal("WHISPER_MODEL is required")
-	}
-	if geminiKey == "" {
-		log.Fatal("GEMINI_API_KEY is required")
 	}
 
 	p := &pipeline.Pipeline{
@@ -50,10 +44,6 @@ func main() {
 			BaseURL: whisperURL,
 			APIKey:  whisperKey,
 			Model:   whisperModel,
-		},
-		Analyzer: &topic.GeminiAnalyzer{
-			APIKey: geminiKey,
-			Model:  geminiModel,
 		},
 	}
 

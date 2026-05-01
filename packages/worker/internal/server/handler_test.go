@@ -8,19 +8,15 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/pipeline"
-	"github.com/owk-owk130/koe/packages/worker/internal/topic"
 	"github.com/owk-owk130/koe/packages/worker/internal/whisper"
 )
 
 type mockRunner struct {
 	transcribeOut *pipeline.TranscribeOutput
 	transcribeErr error
-	analyzeOut    *pipeline.AnalyzeOutput
-	analyzeErr    error
 }
 
 func (m *mockRunner) Transcribe(
@@ -28,13 +24,6 @@ func (m *mockRunner) Transcribe(
 	_ string,
 ) (*pipeline.TranscribeOutput, error) {
 	return m.transcribeOut, m.transcribeErr
-}
-
-func (m *mockRunner) Analyze(
-	_ context.Context,
-	_ []whisper.Segment,
-) (*pipeline.AnalyzeOutput, error) {
-	return m.analyzeOut, m.analyzeErr
 }
 
 func TestHealthHandler(t *testing.T) {
@@ -146,96 +135,6 @@ func TestTranscribeHandler_MethodNotAllowed(t *testing.T) {
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/transcribe")
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusMethodNotAllowed {
-		t.Errorf("expected 405, got %d", resp.StatusCode)
-	}
-}
-
-// /analyze receives pre-computed segments and returns Gemini's topic analysis.
-func TestAnalyzeHandler_Success(t *testing.T) {
-	runner := &mockRunner{
-		analyzeOut: &pipeline.AnalyzeOutput{
-			Summary: "A short greeting.",
-			Topics: []topic.Topic{
-				{Index: 0, Title: "Greeting", StartSec: 0, EndSec: 10},
-			},
-		},
-	}
-	h := &Handler{Runner: runner}
-	srv := httptest.NewServer(h.Mux())
-	defer srv.Close()
-
-	body := `{"segments":[{"text":"hello","start_sec":0,"end_sec":5}]}`
-	resp, err := http.Post(srv.URL+"/analyze", "application/json", strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("expected 200, got %d", resp.StatusCode)
-	}
-
-	var got pipeline.AnalyzeOutput
-	if err := json.NewDecoder(resp.Body).Decode(&got); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if got.Summary != "A short greeting." {
-		t.Errorf("Summary = %q", got.Summary)
-	}
-	if len(got.Topics) != 1 {
-		t.Errorf("expected 1 topic, got %d", len(got.Topics))
-	}
-}
-
-func TestAnalyzeHandler_InvalidJSON(t *testing.T) {
-	h := &Handler{Runner: &mockRunner{}}
-	srv := httptest.NewServer(h.Mux())
-	defer srv.Close()
-
-	resp, err := http.Post(srv.URL+"/analyze", "application/json", strings.NewReader("{not json"))
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", resp.StatusCode)
-	}
-}
-
-func TestAnalyzeHandler_PipelineError(t *testing.T) {
-	runner := &mockRunner{analyzeErr: errors.New("gemini boom")}
-	h := &Handler{Runner: runner}
-	srv := httptest.NewServer(h.Mux())
-	defer srv.Close()
-
-	resp, err := http.Post(
-		srv.URL+"/analyze",
-		"application/json",
-		strings.NewReader(`{"segments":[]}`),
-	)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusInternalServerError {
-		t.Errorf("expected 500, got %d", resp.StatusCode)
-	}
-}
-
-func TestAnalyzeHandler_MethodNotAllowed(t *testing.T) {
-	h := &Handler{Runner: &mockRunner{}}
-	srv := httptest.NewServer(h.Mux())
-	defer srv.Close()
-
-	resp, err := http.Get(srv.URL + "/analyze")
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
