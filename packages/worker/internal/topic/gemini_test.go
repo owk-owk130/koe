@@ -57,6 +57,13 @@ func TestGeminiAnalyzer_Analyze(t *testing.T) {
 		if req.GenerationConfig.Temperature == nil || *req.GenerationConfig.Temperature != 0.2 {
 			t.Error("expected temperature 0.2")
 		}
+		// Long meetings need a high cap to avoid mid-array JSON truncation.
+		if req.GenerationConfig.MaxOutputTokens < 16000 {
+			t.Errorf(
+				"expected MaxOutputTokens >= 16000, got %d",
+				req.GenerationConfig.MaxOutputTokens,
+			)
+		}
 
 		// Gemini returns topics WITHOUT transcript — the boundary-only contract.
 		modelOutput := map[string]any{

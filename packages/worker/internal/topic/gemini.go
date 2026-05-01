@@ -34,6 +34,7 @@ type generationConfig struct {
 	ResponseMimeType string         `json:"responseMimeType"`
 	ResponseSchema   map[string]any `json:"responseSchema,omitempty"`
 	Temperature      *float64       `json:"temperature,omitempty"`
+	MaxOutputTokens  int            `json:"maxOutputTokens,omitempty"`
 }
 
 type geminiContent struct {
@@ -191,6 +192,11 @@ func (g *GeminiAnalyzer) Analyze(ctx context.Context, transcript string, segment
 			ResponseMimeType: "application/json",
 			ResponseSchema:   analysisResponseSchema(),
 			Temperature:      &temp,
+			// Long meetings produce many topics, and each topic carries its own
+			// summary + 200-400 character detail string. The default 8192 cap
+			// truncates the JSON mid-array ("unexpected end of JSON input"), so
+			// raise the ceiling near the model's hard limit.
+			MaxOutputTokens: 32768,
 		},
 	}
 
