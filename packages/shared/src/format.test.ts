@@ -54,6 +54,14 @@ describe("statusLabel", () => {
     expect(statusLabel("failed")).toBe("失敗");
   });
 
+  it("labels phase-aware statuses produced by the two-phase orchestrator", () => {
+    expect(statusLabel("transcribing")).toBe("文字起こし中");
+    expect(statusLabel("transcribed")).toBe("文字起こし完了");
+    expect(statusLabel("analyzing")).toBe("要約中");
+    expect(statusLabel("transcribe_failed")).toBe("文字起こし失敗");
+    expect(statusLabel("analyze_failed")).toBe("要約失敗");
+  });
+
   it("returns the status as-is for unknown values", () => {
     expect(statusLabel("unknown")).toBe("unknown");
   });

@@ -13,12 +13,18 @@ import (
 // --- mocks ---
 
 type mockSplitter struct {
-	chunks []splitter.Chunk
-	err    error
+	chunks       []splitter.Chunk
+	err          error
+	cleanupCalls int
 }
 
 func (m *mockSplitter) Split(_ context.Context, _ string) ([]splitter.Chunk, error) {
 	return m.chunks, m.err
+}
+
+func (m *mockSplitter) Cleanup(_ []splitter.Chunk) error {
+	m.cleanupCalls++
+	return nil
 }
 
 type mockTranscriber struct {
@@ -246,6 +252,37 @@ func TestPipeline_Transcribe_TranscriberError(t *testing.T) {
 	}
 	if _, err := p.Transcribe(context.Background(), "test.mp3"); err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+// Whether Whisper succeeds or fails, the chunk temp files the splitter created
+// must be cleaned up so the long-running container doesn't accumulate
+// per-request leftovers.
+func TestPipeline_Transcribe_CleansUpChunksOnSuccess(t *testing.T) {
+	chunks := []splitter.Chunk{{Index: 0, Path: "chunk0.mp3", StartSec: 0, EndSec: 30}}
+	transcripts := map[string]*whisper.Transcript{
+		"chunk0.mp3": {Text: "ok", Segments: []whisper.Segment{{Text: "ok"}}},
+	}
+	splitterMock := &mockSplitter{chunks: chunks}
+	p := &Pipeline{Splitter: splitterMock, Transcriber: &mockTranscriber{results: transcripts}}
+
+	if _, err := p.Transcribe(context.Background(), "test.mp3"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if splitterMock.cleanupCalls != 1 {
+		t.Errorf("expected Cleanup to be called once, got %d", splitterMock.cleanupCalls)
+	}
+}
+
+func TestPipeline_Transcribe_CleansUpChunksOnTranscribeError(t *testing.T) {
+	splitterMock := &mockSplitter{chunks: []splitter.Chunk{{Index: 0, Path: "chunk0.mp3"}}}
+	p := &Pipeline{
+		Splitter:    splitterMock,
+		Transcriber: &mockTranscriber{err: errors.New("transcribe failed")},
+	}
+	_, _ = p.Transcribe(context.Background(), "test.mp3")
+	if splitterMock.cleanupCalls != 1 {
+		t.Errorf("expected Cleanup to be called once even on error, got %d", splitterMock.cleanupCalls)
 	}
 }
 

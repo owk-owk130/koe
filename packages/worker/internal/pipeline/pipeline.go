@@ -66,6 +66,13 @@ func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*Transcrib
 	if err != nil {
 		return nil, fmt.Errorf("split: %w", err)
 	}
+	defer func() {
+		// Splitter creates one tmp dir per call (~60 chunk files at the new
+		// 60s window). Without this the container leaks ~60 MB per request.
+		if cleanupErr := p.Splitter.Cleanup(chunks); cleanupErr != nil {
+			log.Printf("[pipeline] splitter cleanup failed: %v", cleanupErr)
+		}
+	}()
 	log.Printf("[pipeline] split done chunks=%d elapsed=%s", len(chunks), time.Since(splitStart))
 
 	var allSegments []whisper.Segment

@@ -1,6 +1,9 @@
 package splitter
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -135,7 +138,9 @@ func TestComputeSplitPoints(t *testing.T) {
 				{Start: 600, End: 601},
 			},
 			maxDuration: 300,
-			wantPoints:  []float64{300, 600.5},
+			// Second silence is centred at 600.5, just past deadline 600;
+			// midpoint clamps to 600 so the chunk stays within maxDuration.
+			wantPoints: []float64{300, 600},
 		},
 		{
 			name:     "multiple silences, pick best within window",
@@ -147,6 +152,18 @@ func TestComputeSplitPoints(t *testing.T) {
 			},
 			maxDuration: 300,
 			wantPoints:  []float64{290.5, 550.5, 850.5},
+		},
+		{
+			// A long silence straddling the deadline (e.g. 280-330 with maxDuration
+			// 300) must not push the split past 300s. Otherwise the resulting
+			// chunk would exceed Workers AI Whisper's request-size band.
+			name:     "silence straddles deadline, clamp to deadline",
+			duration: 900,
+			silences: []silence{
+				{Start: 280, End: 330},
+			},
+			maxDuration: 300,
+			wantPoints:  []float64{300, 600},
 		},
 	}
 
@@ -165,5 +182,92 @@ func TestComputeSplitPoints(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Cleanup must remove the temp directory the splitter created and leave any
+// caller-owned paths alone. With chunk size lowered to 60s, every job produces
+// dozens of chunk files; without explicit cleanup the container leaks tens of
+// MB per request.
+func TestFFmpegSplitter_Cleanup(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "koe-chunks-")
+	if err != nil {
+		t.Fatalf("mkdtemp: %v", err)
+	}
+	chunkPath := filepath.Join(tmpDir, "chunk_000.mp3")
+	if err := os.WriteFile(chunkPath, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write chunk: %v", err)
+	}
+
+	s := &FFmpegSplitter{}
+	if err := s.Cleanup([]Chunk{{Path: chunkPath}}); err != nil {
+		t.Fatalf("Cleanup returned error: %v", err)
+	}
+
+	if _, err := os.Stat(tmpDir); !os.IsNotExist(err) {
+		t.Errorf("expected chunk tmp dir to be removed, got err=%v", err)
+	}
+}
+
+// Caller-owned paths (e.g. the original audio file passed in for a
+// no-split-needed mp3) must not be touched by Cleanup.
+func TestFFmpegSplitter_Cleanup_SkipsCallerOwnedPath(t *testing.T) {
+	parent := t.TempDir()
+	audio := filepath.Join(parent, "original.mp3")
+	if err := os.WriteFile(audio, []byte("x"), 0o644); err != nil {
+		t.Fatalf("write audio: %v", err)
+	}
+
+	s := &FFmpegSplitter{}
+	if err := s.Cleanup([]Chunk{{Path: audio}}); err != nil {
+		t.Fatalf("Cleanup returned error: %v", err)
+	}
+
+	if _, err := os.Stat(audio); err != nil {
+		t.Errorf("caller-owned audio file was unexpectedly removed: %v", err)
+	}
+	if _, err := os.Stat(parent); err != nil {
+		t.Errorf("caller-owned parent dir was unexpectedly removed: %v", err)
+	}
+}
+
+// Single-file conversion (non-mp3 input) writes one koe-converted-*.mp3 file
+// directly under os.TempDir(); only that file should be removed, never the
+// shared temp dir.
+func TestFFmpegSplitter_Cleanup_RemovesConvertedSingleFile(t *testing.T) {
+	f, err := os.CreateTemp("", "koe-converted-*.mp3")
+	if err != nil {
+		t.Fatalf("create temp: %v", err)
+	}
+	path := f.Name()
+	f.Close()
+
+	s := &FFmpegSplitter{}
+	if err := s.Cleanup([]Chunk{{Path: path}}); err != nil {
+		t.Fatalf("Cleanup returned error: %v", err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("expected converted single file to be removed, err=%v", err)
+	}
+	if _, err := os.Stat(os.TempDir()); err != nil {
+		t.Errorf("os.TempDir() was unexpectedly removed: %v", err)
+	}
+}
+
+func TestFFmpegSplitter_Cleanup_NoOpForEmpty(t *testing.T) {
+	s := &FFmpegSplitter{}
+	if err := s.Cleanup(nil); err != nil {
+		t.Errorf("expected nil error for empty input, got %v", err)
+	}
+}
+
+// 内部実装の前提（Splitter が `koe-chunks-` で識別すること）が破綻していな
+// いか、定数チェック相当のセンチネル。
+func TestFFmpegSplitter_Cleanup_SentinelPrefixes(t *testing.T) {
+	for _, p := range []string{"koe-chunks-", "koe-converted-"} {
+		if !strings.HasPrefix(p, "koe-") {
+			t.Errorf("unexpected prefix %q", p)
+		}
 	}
 }

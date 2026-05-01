@@ -48,4 +48,30 @@ describe("chunk-repository", () => {
     const chunks = await findChunksByJob(env.DB, "nonexistent");
     expect(chunks).toEqual([]);
   });
+
+  // D1 caps bound parameters at 100 per query. Each row binds 8 columns, so a
+  // single-statement insert of >12 rows overflows the limit. The repository
+  // must batch internally so callers can pass arbitrary lengths safely.
+  it("inserts a large number of chunks in a single call", async () => {
+    await env.DB.prepare("INSERT INTO jobs (id, user_id, audio_key) VALUES (?, ?, ?)")
+      .bind("job-large", "u1", "u1/audio/job-large/original.mp3")
+      .run();
+
+    const inputs = Array.from({ length: 50 }, (_, i) => ({
+      id: `large-chunk-${i}`,
+      chunkIndex: i,
+      audioKey: `u1/audio/job-large/chunks/${i}.mp3`,
+      startSec: i * 60,
+      endSec: (i + 1) * 60,
+      transcript: `text ${i}`,
+    }));
+
+    await createChunks(env.DB, "job-large", inputs);
+
+    const chunks = await findChunksByJob(env.DB, "job-large");
+    expect(chunks.length).toBe(50);
+    expect(chunks[0].chunkIndex).toBe(0);
+    expect(chunks[49].chunkIndex).toBe(49);
+    expect(chunks[49].transcript).toBe("text 49");
+  });
 });

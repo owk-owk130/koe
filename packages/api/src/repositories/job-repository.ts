@@ -99,15 +99,24 @@ export const markAsTranscribed = async (
     .where(eq(jobs.id, id));
 };
 
-// Atomic transition for the analyze phase: transcribed or analyze_failed → analyzing.
-// analyze_failed is also accepted so manual `POST /jobs/:id/analyze` retries succeed.
+// Atomic transition for the analyze phase: any analyze-eligible status → analyzing.
+// `transcribed` is the normal first analyze; `analyze_failed` is the automatic
+// retry path; `completed` covers user-initiated regeneration after a successful
+// run (e.g. wanting fresh topics under a new prompt).
 export const claimJobForAnalyze = async (d1: D1Database, id: string): Promise<boolean> => {
   const db = getDb(d1);
   const rows = await db
     .update(jobs)
     .set({ status: "analyzing", error: null, updatedAt: sql`(datetime('now'))` })
     .where(
-      and(eq(jobs.id, id), or(eq(jobs.status, "transcribed"), eq(jobs.status, "analyze_failed"))),
+      and(
+        eq(jobs.id, id),
+        or(
+          eq(jobs.status, "transcribed"),
+          eq(jobs.status, "analyze_failed"),
+          eq(jobs.status, "completed"),
+        ),
+      ),
     )
     .returning({ id: jobs.id });
   return rows.length > 0;
@@ -167,6 +176,12 @@ export type TopicInput = {
   transcriptKey?: string;
 };
 
+// D1 caps bound parameters at 100 per query (see
+// https://developers.cloudflare.com/d1/platform/limits/). Each row in the
+// topics insert binds 10 columns, so we cap a single-statement insert at 9
+// rows (9 * 10 = 90) and let the caller pass arbitrary lengths.
+const TOPICS_INSERT_BATCH_SIZE = 9;
+
 export const createTopics = async (
   d1: D1Database,
   jobId: string,
@@ -174,19 +189,29 @@ export const createTopics = async (
 ): Promise<void> => {
   if (topicsInput.length === 0) return;
   const db = getDb(d1);
-  await db.insert(topics).values(
-    topicsInput.map((t) => ({
-      id: t.id,
-      jobId,
-      topicIndex: t.topicIndex,
-      title: t.title,
-      summary: t.summary ?? null,
-      detail: t.detail ?? null,
-      startSec: t.startSec ?? null,
-      endSec: t.endSec ?? null,
-      transcript: t.transcript,
-      transcriptKey: t.transcriptKey ?? null,
-    })),
+
+  const batches: TopicInput[][] = [];
+  for (let i = 0; i < topicsInput.length; i += TOPICS_INSERT_BATCH_SIZE) {
+    batches.push(topicsInput.slice(i, i + TOPICS_INSERT_BATCH_SIZE));
+  }
+
+  await Promise.all(
+    batches.map((batch) =>
+      db.insert(topics).values(
+        batch.map((t) => ({
+          id: t.id,
+          jobId,
+          topicIndex: t.topicIndex,
+          title: t.title,
+          summary: t.summary ?? null,
+          detail: t.detail ?? null,
+          startSec: t.startSec ?? null,
+          endSec: t.endSec ?? null,
+          transcript: t.transcript,
+          transcriptKey: t.transcriptKey ?? null,
+        })),
+      ),
+    ),
   );
 };
 
@@ -217,6 +242,13 @@ export const createCompletedJob = async (
 export const findTopicsByJob = async (d1: D1Database, jobId: string): Promise<Topic[]> => {
   const db = getDb(d1);
   return db.select().from(topics).where(eq(topics.jobId, jobId)).orderBy(asc(topics.topicIndex));
+};
+
+// Removes every topic row for a job. Used before re-analyze runs so the new
+// Gemini output replaces the previous topics instead of being inserted on top.
+export const deleteTopicsByJob = async (d1: D1Database, jobId: string): Promise<void> => {
+  const db = getDb(d1);
+  await db.delete(topics).where(eq(topics.jobId, jobId));
 };
 
 // Deletes the job and its dependent rows (topics, chunks) only when the caller owns it.

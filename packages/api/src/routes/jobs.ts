@@ -165,11 +165,15 @@ const jobs = new Hono<Env>()
       throw new AppError(404, "NOT_FOUND", "Job not found");
     }
 
-    if (job.status !== "transcribed" && job.status !== "analyze_failed") {
+    if (
+      job.status !== "transcribed" &&
+      job.status !== "analyze_failed" &&
+      job.status !== "completed"
+    ) {
       throw new AppError(
         409,
         "INVALID_STATE",
-        `Cannot analyze a job in state "${job.status}". This endpoint only accepts jobs in "transcribed" or "analyze_failed" state.`,
+        `Cannot analyze a job in state "${job.status}". This endpoint only accepts jobs in "transcribed", "analyze_failed", or "completed" state.`,
       );
     }
 

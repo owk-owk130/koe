@@ -10,6 +10,7 @@ import {
   createJob,
   createTopics,
   deleteJob,
+  deleteTopicsByJob,
   findJobById,
   findTopicsByJob,
   listJobsByUser,
@@ -171,6 +172,36 @@ describe("job-repository", () => {
     expect(topics.length).toBe(2);
     expect(topics[0].title).toBe("Introduction");
     expect(topics[1].title).toBe("Main Discussion");
+  });
+
+  // D1 caps bound parameters at 100 per query. Each row binds 10 columns, so a
+  // single-statement insert of >10 rows overflows the limit. The repository
+  // must batch internally so callers can pass arbitrary lengths safely.
+  it("creates a large number of topics in a single call", async () => {
+    await createJob(env.DB, {
+      id: "topics-large",
+      userId: "u1",
+      audioKey: "u1/audio/topics-large/original.mp3",
+    });
+
+    const inputs = Array.from({ length: 30 }, (_, i) => ({
+      id: `large-topic-${i}`,
+      topicIndex: i,
+      title: `Topic ${i}`,
+      summary: `Summary ${i}`,
+      detail: `Detail ${i}`,
+      startSec: i * 60,
+      endSec: (i + 1) * 60,
+      transcript: `Body ${i}`,
+    }));
+
+    await createTopics(env.DB, "topics-large", inputs);
+
+    const topics = await findTopicsByJob(env.DB, "topics-large");
+    expect(topics.length).toBe(30);
+    expect(topics[0].title).toBe("Topic 0");
+    expect(topics[29].title).toBe("Topic 29");
+    expect(topics[29].transcript).toBe("Body 29");
   });
 
   describe("searchTopicsByUser", () => {
@@ -485,6 +516,51 @@ describe("job-repository", () => {
       const job = await findJobById(env.DB, "an-fail-1");
       expect(job!.status).toBe("analyze_failed");
       expect(job!.error).toBe("gemini boom");
+    });
+  });
+
+  describe("claimJobForAnalyze (completed re-run)", () => {
+    it("transitions completed → analyzing for regeneration", async () => {
+      await createJob(env.DB, {
+        id: "an-claim-completed",
+        userId: "u1",
+        audioKey: "u1/audio/an-claim-completed/original.mp3",
+      });
+      await updateJobStatus(env.DB, "an-claim-completed", "completed");
+
+      const claimed = await claimJobForAnalyze(env.DB, "an-claim-completed");
+      expect(claimed).toBe(true);
+
+      const job = await findJobById(env.DB, "an-claim-completed");
+      expect(job!.status).toBe("analyzing");
+    });
+  });
+
+  describe("deleteTopicsByJob", () => {
+    it("removes only the topics belonging to the given job", async () => {
+      await createJob(env.DB, {
+        id: "del-topics-target",
+        userId: "u1",
+        audioKey: "u1/audio/del-topics-target/original.mp3",
+      });
+      await createJob(env.DB, {
+        id: "del-topics-other",
+        userId: "u1",
+        audioKey: "u1/audio/del-topics-other/original.mp3",
+      });
+      await createTopics(env.DB, "del-topics-target", [
+        { id: "tt-1", topicIndex: 0, title: "A", transcript: "a" },
+        { id: "tt-2", topicIndex: 1, title: "B", transcript: "b" },
+      ]);
+      await createTopics(env.DB, "del-topics-other", [
+        { id: "to-1", topicIndex: 0, title: "C", transcript: "c" },
+      ]);
+
+      await deleteTopicsByJob(env.DB, "del-topics-target");
+
+      expect((await findTopicsByJob(env.DB, "del-topics-target")).length).toBe(0);
+      // Other job's topics must remain untouched.
+      expect((await findTopicsByJob(env.DB, "del-topics-other")).length).toBe(1);
     });
   });
 });
