@@ -84,6 +84,7 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
   const deleteJob = useDeleteJob();
   const reanalyzeJob = useReanalyzeJob();
   const [confirming, setConfirming] = useState(false);
+  const [confirmingReanalyze, setConfirmingReanalyze] = useState(false);
 
   if (jobQuery.isLoading) {
     return <p className="p-6 text-xs text-text-secondary">読み込み中...</p>;
@@ -157,15 +158,23 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
           <p className="rounded-[8px] bg-error/10 p-3 text-xs text-error">{job.error}</p>
         )}
 
-      {job.status === "analyze_failed" && (
+      {(job.status === "analyze_failed" || job.status === "completed") && (
         <div className="flex flex-col gap-2 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
           <p className="text-xs leading-relaxed text-text-secondary">
-            文字起こし結果は保存されています。要約だけやり直せます（音声の再アップロードは不要です）。
+            {job.status === "analyze_failed"
+              ? "文字起こし結果は保存されています。要約だけやり直せます（音声の再アップロードは不要です）。"
+              : "プロンプトの調整などで要約をやり直したいときは再分析できます。現在の要約とトピックは破棄されます。"}
           </p>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => reanalyzeJob.mutate(jobId)}
+              onClick={() => {
+                if (job.status === "completed") {
+                  setConfirmingReanalyze(true);
+                } else {
+                  reanalyzeJob.mutate(jobId);
+                }
+              }}
               disabled={reanalyzeJob.isPending}
               className="flex items-center gap-1.5 rounded-[8px] bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-50"
             >
@@ -177,6 +186,22 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
             )}
           </div>
         </div>
+      )}
+
+      {confirmingReanalyze && (
+        <ReanalyzeConfirmDialog
+          isPending={reanalyzeJob.isPending}
+          errorMessage={reanalyzeJob.error?.message ?? null}
+          onCancel={() => {
+            setConfirmingReanalyze(false);
+            reanalyzeJob.reset();
+          }}
+          onConfirm={() => {
+            reanalyzeJob.mutate(jobId, {
+              onSuccess: () => setConfirmingReanalyze(false),
+            });
+          }}
+        />
       )}
 
       {job.summary && (
@@ -223,6 +248,62 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function ReanalyzeConfirmDialog({
+  isPending,
+  errorMessage,
+  onCancel,
+  onConfirm,
+}: {
+  isPending: boolean;
+  errorMessage: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reanalyze-history-title"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-6"
+      onClick={onCancel}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-[12px] bg-white p-5 shadow-xl"
+      >
+        <h2 id="reanalyze-history-title" className="text-[15px] font-semibold text-text-primary">
+          このジョブを再分析しますか？
+        </h2>
+        <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+          現在の要約とトピックは破棄され、文字起こし結果から再生成します。音声の再アップロードや
+          Whisper の再課金は発生しません。
+        </p>
+        {errorMessage && (
+          <p className="mt-3 rounded-[8px] bg-error/10 p-2 text-xs text-error">{errorMessage}</p>
+        )}
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isPending}
+            className="rounded-[8px] border border-[rgba(0,0,0,0.08)] bg-white px-3 py-1.5 text-xs text-text-primary hover:bg-gray-50 disabled:opacity-50"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isPending}
+            className="rounded-[8px] bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-50"
+          >
+            {isPending ? "再分析中..." : "再分析する"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

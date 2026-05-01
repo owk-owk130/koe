@@ -295,4 +295,16 @@ describe("POST /api/v1/jobs/:id/analyze", () => {
     );
     expect(res.status).toBe(202);
   });
+
+  // Re-running analyze on a completed job is the regenerate-after-success
+  // workflow (e.g. trying a new prompt against an already analyzed meeting).
+  it("returns 202 when the job is completed (regenerate)", async () => {
+    await insertJobInState("an-202-completed", "completed");
+    const res = await app.request(
+      "/api/v1/jobs/an-202-completed/analyze",
+      { method: "POST", headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(202);
+  });
 });

@@ -6,6 +6,7 @@ import {
   claimJobForTranscribe,
   completeJob,
   createTopics,
+  deleteTopicsByJob,
   findJobById,
   markAsAnalyzeFailed,
   markAsTranscribed,
@@ -198,12 +199,10 @@ export class KoeProcessor extends Container<Bindings> {
     const claimed = await claimJobForAnalyze(this.env.DB, job.jobId);
     if (!claimed) {
       const current = await findJobById(this.env.DB, job.jobId);
-      // Already completed, or another invocation is in-flight on this phase:
-      // nothing to do. Treating `analyzing` as success here prevents duplicate
-      // enqueues from flipping in-flight jobs to analyze_failed.
-      if (current?.status === "completed" || current?.status === "analyzing") {
-        return;
-      }
+      // Another invocation is already running analyze on this job: nothing to
+      // do. Treating `analyzing` as success here prevents duplicate enqueues
+      // from flipping in-flight jobs to analyze_failed.
+      if (current?.status === "analyzing") return;
       throw new Error(`could not claim job for analyze (status=${current?.status ?? "unknown"})`);
     }
 
@@ -211,6 +210,10 @@ export class KoeProcessor extends Container<Bindings> {
     if (!current?.transcriptKey) {
       throw new Error("transcript_key not set; transcribe must complete before analyze");
     }
+
+    // Clear any previous topics so the new analyze run replaces them instead
+    // of being inserted alongside (relevant for regenerate-after-completed).
+    await deleteTopicsByJob(this.env.DB, job.jobId);
 
     const transcriptObj = await this.env.BUCKET.get(current.transcriptKey);
     if (!transcriptObj) {
