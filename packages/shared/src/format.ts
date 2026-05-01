@@ -27,8 +27,15 @@ export function formatFileSize(bytes: number): string {
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "待機中",
-  processing: "処理中",
+  transcribing: "文字起こし中",
+  transcribed: "文字起こし完了",
+  analyzing: "要約中",
   completed: "完了",
+  transcribe_failed: "文字起こし失敗",
+  analyze_failed: "要約失敗",
+  // legacy values from the single-phase orchestrator are kept so existing rows
+  // still render correctly.
+  processing: "処理中",
   failed: "失敗",
 };
 

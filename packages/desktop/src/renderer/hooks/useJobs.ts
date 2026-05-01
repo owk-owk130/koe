@@ -2,7 +2,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "~/renderer/lib/api";
 import { useAuth } from "./useAuth";
 
-export type JobStatus = "pending" | "processing" | "completed" | "failed";
+// Phase-aware statuses produced by the two-phase orchestrator. Legacy values
+// ("processing", "failed") are kept so rows created before the split still
+// render correctly.
+export type JobStatus =
+  | "pending"
+  | "transcribing"
+  | "transcribed"
+  | "analyzing"
+  | "completed"
+  | "transcribe_failed"
+  | "analyze_failed"
+  | "processing"
+  | "failed";
 
 export interface JobSummary {
   id: string;
@@ -53,7 +65,17 @@ export function useJobs() {
   });
 }
 
-// Polls pending / processing jobs every 3 seconds until completed or failed.
+// Statuses where the orchestrator is still actively progressing the job.
+// Used to keep polling until the job lands in a terminal state.
+const IN_PROGRESS_STATUSES: ReadonlySet<JobStatus> = new Set([
+  "pending",
+  "transcribing",
+  "analyzing",
+  // legacy
+  "processing",
+]);
+
+// Polls non-terminal jobs every 3 seconds until they finish or fail.
 export function useJob(jobId: string | null) {
   const { token } = useAuth();
   return useQuery<JobDetail>({
@@ -67,7 +89,7 @@ export function useJob(jobId: string | null) {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return 3000;
-      return data.status === "pending" || data.status === "processing" ? 3000 : false;
+      return IN_PROGRESS_STATUSES.has(data.status) ? 3000 : false;
     },
   });
 }
@@ -106,6 +128,30 @@ export function useCreateJob() {
       return res.json();
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: JOBS_KEY });
+    },
+  });
+}
+
+// Re-runs the analyze phase for a job whose transcript has already been
+// persisted. Only valid when the job is in `transcribed` or `analyze_failed`;
+// the API rejects other states with 409.
+export function useReanalyzeJob() {
+  const { token } = useAuth();
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: async (jobId) => {
+      const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}/analyze`, {
+        method: "POST",
+        headers: authHeaders(token),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`Failed to re-analyze job (${res.status}): ${text}`);
+      }
+    },
+    onSuccess: (_, jobId) => {
+      queryClient.invalidateQueries({ queryKey: [...JOBS_KEY, "detail", jobId] });
       queryClient.invalidateQueries({ queryKey: JOBS_KEY });
     },
   });

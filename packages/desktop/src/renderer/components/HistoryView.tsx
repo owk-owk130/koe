@@ -1,7 +1,13 @@
 import { useState } from "react";
-import { ArrowLeft, History, Trash2 } from "lucide-react";
+import { ArrowLeft, History, RotateCcw, Trash2 } from "lucide-react";
 import { formatDate, formatDuration } from "@koe/shared";
-import { useDeleteJob, useJob, useJobTopics, useJobs } from "~/renderer/hooks/useJobs";
+import {
+  useDeleteJob,
+  useJob,
+  useJobTopics,
+  useJobs,
+  useReanalyzeJob,
+} from "~/renderer/hooks/useJobs";
 import { StatusBadge } from "./StatusBadge";
 
 export function HistoryView() {
@@ -76,6 +82,7 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
   const job = jobQuery.data;
   const topicsQuery = useJobTopics(jobId, job?.status === "completed");
   const deleteJob = useDeleteJob();
+  const reanalyzeJob = useReanalyzeJob();
   const [confirming, setConfirming] = useState(false);
 
   if (jobQuery.isLoading) {
@@ -143,8 +150,33 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
         />
       )}
 
-      {job.status === "failed" && job.error && (
-        <p className="rounded-[8px] bg-error/10 p-3 text-xs text-error">{job.error}</p>
+      {(job.status === "failed" ||
+        job.status === "transcribe_failed" ||
+        job.status === "analyze_failed") &&
+        job.error && (
+          <p className="rounded-[8px] bg-error/10 p-3 text-xs text-error">{job.error}</p>
+        )}
+
+      {job.status === "analyze_failed" && (
+        <div className="flex flex-col gap-2 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
+          <p className="text-xs leading-relaxed text-text-secondary">
+            文字起こし結果は保存されています。要約だけやり直せます（音声の再アップロードは不要です）。
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => reanalyzeJob.mutate(jobId)}
+              disabled={reanalyzeJob.isPending}
+              className="flex items-center gap-1.5 rounded-[8px] bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-50"
+            >
+              <RotateCcw size={12} />
+              {reanalyzeJob.isPending ? "再分析中..." : "再分析する"}
+            </button>
+            {reanalyzeJob.isError && (
+              <span className="text-xs text-error">{reanalyzeJob.error.message}</span>
+            )}
+          </div>
+        </div>
       )}
 
       {job.summary && (
