@@ -13,4 +13,8 @@ type Chunk struct {
 // Splitter splits an audio file into chunks.
 type Splitter interface {
 	Split(ctx context.Context, audioPath string) ([]Chunk, error)
+	// Cleanup removes any temporary files / directories the implementation
+	// created during Split. Caller-owned paths (e.g. the original audio file
+	// passed in for a no-split-needed pass-through) must not be touched.
+	Cleanup(chunks []Chunk) error
 }

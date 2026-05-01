@@ -83,6 +83,13 @@ func computeSplitPoints(duration float64, silences []silence, maxDuration float6
 			if s.Start > deadline {
 				break
 			}
+			// Clamp the midpoint to the deadline. A long silence that straddles
+			// the boundary (e.g. silence 280-330 with deadline 300) would
+			// otherwise yield mid=305 and produce a chunk longer than
+			// maxDuration — defeating the request-size cap.
+			if mid > deadline {
+				mid = deadline
+			}
 			if mid >= minSplit {
 				bestPoint = mid
 			}
@@ -219,6 +226,36 @@ func (s *FFmpegSplitter) Split(ctx context.Context, audioPath string) ([]Chunk, 
 
 	cleanupTmpDir = false // caller owns the chunks now
 	return chunks, nil
+}
+
+// Cleanup removes temp artifacts produced by Split. Two shapes are recognised:
+//
+//   - chunk files under a per-call `koe-chunks-*` directory → remove the dir
+//   - a single `koe-converted-*.mp3` file directly under os.TempDir()
+//     (no-split-needed conversion) → remove the file
+//
+// Anything else is treated as caller-owned (e.g. the original audio file used
+// directly when an mp3 needs no split) and left alone.
+func (s *FFmpegSplitter) Cleanup(chunks []Chunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	dirsToRemove := make(map[string]struct{})
+	for _, c := range chunks {
+		base := filepath.Base(c.Path)
+		if strings.HasPrefix(base, "koe-converted-") {
+			os.Remove(c.Path)
+			continue
+		}
+		dir := filepath.Dir(c.Path)
+		if strings.HasPrefix(filepath.Base(dir), "koe-chunks-") {
+			dirsToRemove[dir] = struct{}{}
+		}
+	}
+	for dir := range dirsToRemove {
+		os.RemoveAll(dir)
+	}
+	return nil
 }
 
 func (s *FFmpegSplitter) probeDuration(ctx context.Context, audioPath string) (float64, error) {
