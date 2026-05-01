@@ -21,9 +21,23 @@ export function PopoverView() {
   }, [createJob.isPending]);
 
   const uploading = createJob.isPending;
-  const processing = job?.status === "pending" || job?.status === "processing";
-  const failed = job?.status === "failed";
+  const processing =
+    job?.status === "pending" ||
+    job?.status === "processing" ||
+    job?.status === "transcribing" ||
+    job?.status === "analyzing";
+  const failed =
+    job?.status === "failed" ||
+    job?.status === "transcribe_failed" ||
+    job?.status === "analyze_failed";
   const loading = uploading || processing;
+  const progressLabel = uploading
+    ? "アップロード中..."
+    : job?.status === "analyzing"
+      ? "要約中..."
+      : job?.status === "transcribing" || job?.status === "processing"
+        ? "文字起こし中..."
+        : "処理を準備中...";
   const mutationError =
     createJob.error?.message ??
     jobQuery.error?.message ??
@@ -152,9 +166,7 @@ export function PopoverView() {
         {loading && (
           <div className="flex flex-col items-center justify-center gap-2 py-8">
             <div className="h-6 w-6 animate-spin rounded-full border-[3px] border-brand border-t-transparent" />
-            <p className="text-xs text-text-secondary">
-              {uploading ? "アップロード中..." : "文字起こし中..."}
-            </p>
+            <p className="text-xs text-text-secondary">{progressLabel}</p>
           </div>
         )}
 

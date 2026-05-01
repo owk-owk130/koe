@@ -18,9 +18,23 @@ export function QuickTranscribe() {
   }, [createJob.isPending]);
 
   const uploading = createJob.isPending;
-  const processing = job?.status === "pending" || job?.status === "processing";
-  const failed = job?.status === "failed";
+  const processing =
+    job?.status === "pending" ||
+    job?.status === "processing" ||
+    job?.status === "transcribing" ||
+    job?.status === "analyzing";
+  const failed =
+    job?.status === "failed" ||
+    job?.status === "transcribe_failed" ||
+    job?.status === "analyze_failed";
   const loading = uploading || processing;
+  const progressLabel = uploading
+    ? "アップロード中..."
+    : job?.status === "analyzing"
+      ? "要約中..."
+      : job?.status === "transcribing" || job?.status === "processing"
+        ? "文字起こし中..."
+        : "処理を準備中...";
 
   const transcribeBlob = async (blob: Blob) => {
     const filename = `quick-${Date.now()}.webm`;
@@ -59,9 +73,7 @@ export function QuickTranscribe() {
         {loading && (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white">
             <div className="h-7 w-7 animate-spin rounded-full border-[3px] border-brand border-t-transparent" />
-            <p className="text-[13px] font-medium text-text-primary">
-              {uploading ? "アップロード中..." : "文字起こし中..."}
-            </p>
+            <p className="text-[13px] font-medium text-text-primary">{progressLabel}</p>
           </div>
         )}
 
