@@ -169,7 +169,7 @@ const jobs = new Hono<Env>()
       throw new AppError(
         409,
         "INVALID_STATE",
-        `Cannot analyze a job in state "${job.status}". Wait until transcription completes.`,
+        `Cannot analyze a job in state "${job.status}". This endpoint only accepts jobs in "transcribed" or "analyze_failed" state.`,
       );
     }
 

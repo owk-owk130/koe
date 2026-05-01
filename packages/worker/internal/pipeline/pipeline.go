@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/splitter"
@@ -68,7 +69,7 @@ func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*Transcrib
 	log.Printf("[pipeline] split done chunks=%d elapsed=%s", len(chunks), time.Since(splitStart))
 
 	var allSegments []whisper.Segment
-	var fullText string
+	var fullText strings.Builder
 	chunkResults := make([]ChunkResult, 0, len(chunks))
 
 	for _, chunk := range chunks {
@@ -85,7 +86,8 @@ func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*Transcrib
 			chunk.EndSec,
 			time.Since(chunkStart),
 		)
-		fullText += t.Text + "\n"
+		fullText.WriteString(t.Text)
+		fullText.WriteByte('\n')
 		// Whisper returns chunk-local timestamps; shift onto the global timeline.
 		for _, seg := range t.Segments {
 			seg.StartSec += chunk.StartSec
@@ -101,7 +103,7 @@ func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*Transcrib
 	}
 
 	return &TranscribeOutput{
-		Transcript: whisper.Transcript{Text: fullText, Segments: allSegments},
+		Transcript: whisper.Transcript{Text: fullText.String(), Segments: allSegments},
 		Chunks:     chunkResults,
 	}, nil
 }
@@ -114,11 +116,12 @@ func (p *Pipeline) Analyze(
 	segments []whisper.Segment,
 ) (*AnalyzeOutput, error) {
 	analyzeStart := time.Now()
-	var fullText string
+	var fullText strings.Builder
 	for _, s := range segments {
-		fullText += s.Text + "\n"
+		fullText.WriteString(s.Text)
+		fullText.WriteByte('\n')
 	}
-	analysis, err := p.Analyzer.Analyze(ctx, fullText, segments)
+	analysis, err := p.Analyzer.Analyze(ctx, fullText.String(), segments)
 	if err != nil {
 		return nil, fmt.Errorf("analyze: %w", err)
 	}

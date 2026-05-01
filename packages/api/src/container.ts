@@ -104,7 +104,10 @@ export class KoeProcessor extends Container<Bindings> {
     // Transcribe phase. Skipped when the job is being re-analyzed.
     if (job.startPhase !== "analyze") {
       try {
-        await this.runTranscribe(job);
+        const next = await this.runTranscribe(job);
+        // Another invocation is in-flight on transcribe; let it finish without
+        // entering analyze (which would observe `transcribing` and bail).
+        if (next === "stop") return;
       } catch (err) {
         await this.handleTranscribeError(job, err);
         return;
@@ -122,13 +125,15 @@ export class KoeProcessor extends Container<Bindings> {
     await this.ctx.storage.delete("job");
   }
 
-  private async runTranscribe(job: JobPayload): Promise<void> {
+  private async runTranscribe(job: JobPayload): Promise<"continue" | "stop"> {
     const claimed = await claimJobForTranscribe(this.env.DB, job.jobId);
     if (!claimed) {
-      // Already past transcribe (transcribed / analyzing / completed) or in a
-      // non-claimable state. If the job is past transcribe, drop through so
-      // analyze can run; otherwise surface the unexpected state as an error.
       const current = await findJobById(this.env.DB, job.jobId);
+      // Another invocation is already transcribing this job. Back off entirely
+      // so we don't flip an in-flight job to transcribe_failed via duplicate
+      // enqueues / re-entrant alarms.
+      if (current?.status === "transcribing") return "stop";
+      // Job has already moved past transcribe. Drop through so analyze can run.
       if (
         current &&
         (current.status === "transcribed" ||
@@ -136,7 +141,7 @@ export class KoeProcessor extends Container<Bindings> {
           current.status === "analyze_failed" ||
           current.status === "completed")
       ) {
-        return;
+        return "continue";
       }
       throw new Error(
         `could not claim job for transcribe (status=${current?.status ?? "unknown"})`,
@@ -186,14 +191,19 @@ export class KoeProcessor extends Container<Bindings> {
       transcriptKey,
       totalChunks: out.chunks.length,
     });
+    return "continue";
   }
 
   private async runAnalyze(job: JobPayload): Promise<void> {
     const claimed = await claimJobForAnalyze(this.env.DB, job.jobId);
     if (!claimed) {
       const current = await findJobById(this.env.DB, job.jobId);
-      // Already completed → nothing to do.
-      if (current?.status === "completed") return;
+      // Already completed, or another invocation is in-flight on this phase:
+      // nothing to do. Treating `analyzing` as success here prevents duplicate
+      // enqueues from flipping in-flight jobs to analyze_failed.
+      if (current?.status === "completed" || current?.status === "analyzing") {
+        return;
+      }
       throw new Error(`could not claim job for analyze (status=${current?.status ?? "unknown"})`);
     }
 
