@@ -167,6 +167,12 @@ export type TopicInput = {
   transcriptKey?: string;
 };
 
+// D1 caps bound parameters at 100 per query (see
+// https://developers.cloudflare.com/d1/platform/limits/). Each row in the
+// topics insert binds 10 columns, so we cap a single-statement insert at 9
+// rows (9 * 10 = 90) and let the caller pass arbitrary lengths.
+const TOPICS_INSERT_BATCH_SIZE = 9;
+
 export const createTopics = async (
   d1: D1Database,
   jobId: string,
@@ -174,19 +180,29 @@ export const createTopics = async (
 ): Promise<void> => {
   if (topicsInput.length === 0) return;
   const db = getDb(d1);
-  await db.insert(topics).values(
-    topicsInput.map((t) => ({
-      id: t.id,
-      jobId,
-      topicIndex: t.topicIndex,
-      title: t.title,
-      summary: t.summary ?? null,
-      detail: t.detail ?? null,
-      startSec: t.startSec ?? null,
-      endSec: t.endSec ?? null,
-      transcript: t.transcript,
-      transcriptKey: t.transcriptKey ?? null,
-    })),
+
+  const batches: TopicInput[][] = [];
+  for (let i = 0; i < topicsInput.length; i += TOPICS_INSERT_BATCH_SIZE) {
+    batches.push(topicsInput.slice(i, i + TOPICS_INSERT_BATCH_SIZE));
+  }
+
+  await Promise.all(
+    batches.map((batch) =>
+      db.insert(topics).values(
+        batch.map((t) => ({
+          id: t.id,
+          jobId,
+          topicIndex: t.topicIndex,
+          title: t.title,
+          summary: t.summary ?? null,
+          detail: t.detail ?? null,
+          startSec: t.startSec ?? null,
+          endSec: t.endSec ?? null,
+          transcript: t.transcript,
+          transcriptKey: t.transcriptKey ?? null,
+        })),
+      ),
+    ),
   );
 };
 

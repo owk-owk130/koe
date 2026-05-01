@@ -173,6 +173,36 @@ describe("job-repository", () => {
     expect(topics[1].title).toBe("Main Discussion");
   });
 
+  // D1 caps bound parameters at 100 per query. Each row binds 10 columns, so a
+  // single-statement insert of >10 rows overflows the limit. The repository
+  // must batch internally so callers can pass arbitrary lengths safely.
+  it("creates a large number of topics in a single call", async () => {
+    await createJob(env.DB, {
+      id: "topics-large",
+      userId: "u1",
+      audioKey: "u1/audio/topics-large/original.mp3",
+    });
+
+    const inputs = Array.from({ length: 30 }, (_, i) => ({
+      id: `large-topic-${i}`,
+      topicIndex: i,
+      title: `Topic ${i}`,
+      summary: `Summary ${i}`,
+      detail: `Detail ${i}`,
+      startSec: i * 60,
+      endSec: (i + 1) * 60,
+      transcript: `Body ${i}`,
+    }));
+
+    await createTopics(env.DB, "topics-large", inputs);
+
+    const topics = await findTopicsByJob(env.DB, "topics-large");
+    expect(topics.length).toBe(30);
+    expect(topics[0].title).toBe("Topic 0");
+    expect(topics[29].title).toBe("Topic 29");
+    expect(topics[29].transcript).toBe("Body 29");
+  });
+
   describe("searchTopicsByUser", () => {
     beforeAll(async () => {
       // second user with their own job+topic to verify isolation
