@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, History, RotateCcw, Trash2 } from "lucide-react";
+import { ArrowLeft, History, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { formatDate, formatDuration } from "@koe/shared";
 import {
   useDeleteJob,
@@ -159,32 +159,36 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
         )}
 
       {(job.status === "analyze_failed" || job.status === "completed") && (
-        <div className="flex flex-col gap-2 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
+        <div className="flex flex-col gap-3 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
           <p className="text-xs leading-relaxed text-text-secondary">
             {job.status === "analyze_failed"
               ? "文字起こし結果は保存されています。要約だけやり直せます（音声の再アップロードは不要です）。"
               : "プロンプトの調整などで要約をやり直したいときは再分析できます。現在の要約とトピックは破棄されます。"}
           </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                if (job.status === "completed") {
-                  setConfirmingReanalyze(true);
-                } else {
-                  reanalyzeJob.mutate(jobId);
-                }
-              }}
-              disabled={reanalyzeJob.isPending}
-              className="flex items-center gap-1.5 rounded-[8px] bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-50"
-            >
+          <button
+            type="button"
+            onClick={() => {
+              if (job.status === "completed") {
+                setConfirmingReanalyze(true);
+              } else {
+                reanalyzeJob.mutate(jobId);
+              }
+            }}
+            disabled={reanalyzeJob.isPending}
+            className="flex w-fit items-center gap-1.5 rounded-button bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {reanalyzeJob.isPending ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
               <RotateCcw size={12} />
-              {reanalyzeJob.isPending ? "再分析中..." : "再分析する"}
-            </button>
-            {reanalyzeJob.isError && (
-              <span className="text-xs text-error">{reanalyzeJob.error.message}</span>
             )}
-          </div>
+            {reanalyzeJob.isPending ? "再分析中..." : "再分析する"}
+          </button>
+          {reanalyzeJob.isError && (
+            <p className="rounded-button bg-error/10 p-2 text-xs text-error">
+              {reanalyzeJob.error.message}
+            </p>
+          )}
         </div>
       )}
 
@@ -283,14 +287,14 @@ function ReanalyzeConfirmDialog({
           Whisper の再課金は発生しません。
         </p>
         {errorMessage && (
-          <p className="mt-3 rounded-[8px] bg-error/10 p-2 text-xs text-error">{errorMessage}</p>
+          <p className="mt-3 rounded-button bg-error/10 p-2 text-xs text-error">{errorMessage}</p>
         )}
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
             disabled={isPending}
-            className="rounded-[8px] border border-[rgba(0,0,0,0.08)] bg-white px-3 py-1.5 text-xs text-text-primary hover:bg-gray-50 disabled:opacity-50"
+            className="rounded-button border border-[rgba(0,0,0,0.08)] bg-white px-3 py-1.5 text-xs text-text-primary hover:bg-gray-50 disabled:opacity-50"
           >
             キャンセル
           </button>
@@ -298,8 +302,9 @@ function ReanalyzeConfirmDialog({
             type="button"
             onClick={onConfirm}
             disabled={isPending}
-            className="rounded-[8px] bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand/90 disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-button bg-brand px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
           >
+            {isPending && <Loader2 size={12} className="animate-spin" />}
             {isPending ? "再分析中..." : "再分析する"}
           </button>
         </div>
