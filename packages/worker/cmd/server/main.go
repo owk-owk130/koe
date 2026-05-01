@@ -38,7 +38,14 @@ func main() {
 	}
 
 	p := &pipeline.Pipeline{
-		Splitter: &splitter.FFmpegSplitter{},
+		Splitter: &splitter.FFmpegSplitter{
+			// Cap each chunk well under Cloudflare Workers AI Whisper's effective
+			// request limit. The endpoint is documented as preferring ~1MB
+			// requests, with reports of 2MB+ payloads being rejected. 60s of
+			// mp3 is typically 0.7-1.0MB at 96-128 kbps, which keeps every
+			// chunk inside the safe band.
+			MaxChunkDuration: 60,
+		},
 		Transcriber: &whisper.Client{
 			BaseURL: whisperURL,
 			APIKey:  whisperKey,
