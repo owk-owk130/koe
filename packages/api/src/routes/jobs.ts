@@ -152,6 +152,40 @@ const jobs = new Hono<Env>()
       })),
     });
   })
+  // Returns the raw Whisper transcript persisted in R2 during the transcribe
+  // phase. UI uses this for the "全文" section, which shows the unfiltered
+  // transcription separately from Gemini's topic-level summaries.
+  .get("/:id/transcript", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    const job = await findJobById(c.env.DB, c.req.param("id"));
+
+    if (!job || job.userId !== user.id) {
+      throw new AppError(404, "NOT_FOUND", "Job not found");
+    }
+
+    if (!job.transcriptKey) {
+      // Job hasn't reached the transcribed state yet (still pending /
+      // transcribing, or it was a legacy single-phase job that never
+      // recorded a transcript_key).
+      throw new AppError(404, "NOT_FOUND", "Transcript not available for this job yet");
+    }
+
+    const r2Object = await c.env.BUCKET.get(job.transcriptKey);
+    if (!r2Object) {
+      throw new AppError(404, "NOT_FOUND", "Transcript missing from storage");
+    }
+
+    const data = await r2Object.json<{
+      text: string;
+      segments: { text: string; start_sec: number; end_sec: number }[];
+    }>();
+
+    return c.json({
+      text: data.text,
+      segments: data.segments,
+    });
+  })
   // Re-runs the analyze phase for a job whose transcript has already been
   // persisted. Useful when Gemini failed (analyze_failed) or when the user
   // wants a fresh summary without paying for Whisper again.
