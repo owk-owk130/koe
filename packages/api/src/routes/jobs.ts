@@ -11,7 +11,7 @@ import {
   listJobsByUser,
 } from "~/repositories/job-repository";
 import { enqueueJob } from "~/services/container-service";
-import { deleteByPrefix, uploadAudio } from "~/services/r2-storage";
+import { deleteByPrefix, downloadJSON, uploadAudio } from "~/services/r2-storage";
 import type { Env } from "~/types";
 
 const audioFormSchema = z.object({
@@ -171,15 +171,14 @@ const jobs = new Hono<Env>()
       throw new AppError(404, "NOT_FOUND", "Transcript not available for this job yet");
     }
 
-    const r2Object = await c.env.BUCKET.get(job.transcriptKey);
-    if (!r2Object) {
-      throw new AppError(404, "NOT_FOUND", "Transcript missing from storage");
-    }
-
-    const data = await r2Object.json<{
+    const data = await downloadJSON<{
       text: string;
       segments: { text: string; start_sec: number; end_sec: number }[];
-    }>();
+    }>(c.env.BUCKET, job.transcriptKey);
+
+    if (!data) {
+      throw new AppError(404, "NOT_FOUND", "Transcript missing from storage");
+    }
 
     return c.json({
       text: data.text,

@@ -130,6 +130,10 @@ export function useJobTranscript(jobId: string | null, enabled: boolean) {
       return res.json();
     },
     enabled: !!jobId && !!token && enabled,
+    // Legacy jobs that completed before the two-phase split keep transcript_key
+    // null and the API legitimately returns 404 for them. Skip the React Query
+    // default retry so opening such jobs doesn't hammer the endpoint.
+    retry: false,
   });
 }
 
