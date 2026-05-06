@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/splitter"
 	"github.com/owk-owk130/koe/packages/worker/internal/storage"
-	"github.com/owk-owk130/koe/packages/worker/internal/topic"
 	"github.com/owk-owk130/koe/packages/worker/internal/whisper"
 )
 
@@ -36,30 +34,16 @@ type TranscribeOutput struct {
 	Chunks     []ChunkResult      `json:"chunks"`
 }
 
-// AnalyzeOutput is the result of running Gemini on pre-computed segments.
-type AnalyzeOutput struct {
-	Summary string        `json:"summary"`
-	Topics  []topic.Topic `json:"topics"`
-}
-
-// Result represents the output of a full pipeline run (CLI / sidecar / mcp).
-type Result struct {
-	Transcript whisper.Transcript `json:"transcript"`
-	Summary    string             `json:"summary"`
-	Topics     []topic.Topic      `json:"topics"`
-	Chunks     []ChunkResult      `json:"chunks"`
-}
-
-// Pipeline orchestrates audio splitting, transcription, and topic analysis.
+// Pipeline orchestrates audio splitting and transcription. Topic analysis is
+// owned by the Workers TS side now and is not part of this struct.
 type Pipeline struct {
 	Splitter    splitter.Splitter
 	Transcriber whisper.Transcriber
-	Analyzer    topic.Analyzer
 	Storage     storage.Storage // nil for CLI mode (no persistence)
 }
 
-// Transcribe runs split + Whisper. Kept separate so the server can persist its
-// output and let analyze resume without re-charging Whisper on Gemini failures.
+// Transcribe runs split + Whisper. The orchestrator persists the output to R2
+// so the analyze phase can resume independently without re-charging Whisper.
 func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*TranscribeOutput, error) {
 	splitStart := time.Now()
 	chunks, err := p.Splitter.Split(ctx, audioPath)
@@ -76,7 +60,6 @@ func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*Transcrib
 	log.Printf("[pipeline] split done chunks=%d elapsed=%s", len(chunks), time.Since(splitStart))
 
 	var allSegments []whisper.Segment
-	var fullText strings.Builder
 	chunkResults := make([]ChunkResult, 0, len(chunks))
 
 	for _, chunk := range chunks {
@@ -93,8 +76,6 @@ func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*Transcrib
 			chunk.EndSec,
 			time.Since(chunkStart),
 		)
-		fullText.WriteString(t.Text)
-		fullText.WriteByte('\n')
 		// Whisper returns chunk-local timestamps; shift onto the global timeline.
 		for _, seg := range t.Segments {
 			seg.StartSec += chunk.StartSec
@@ -109,51 +90,29 @@ func (p *Pipeline) Transcribe(ctx context.Context, audioPath string) (*Transcrib
 		})
 	}
 
+	// allSegments を結合した text フィールドは API 側ではもう使わない
+	// (analyze は Workers TS で segments から直接構築する) が、互換のため
+	// 一応 fullText を保持しておく。
+	fullText := buildFullText(chunkResults)
+
 	return &TranscribeOutput{
-		Transcript: whisper.Transcript{Text: fullText.String(), Segments: allSegments},
+		Transcript: whisper.Transcript{Text: fullText, Segments: allSegments},
 		Chunks:     chunkResults,
 	}, nil
 }
 
-// Analyze runs the topic analyzer on pre-computed segments. The transcript
-// argument expected by the Analyzer interface is rebuilt from segments so the
-// caller doesn't need to pass it twice.
-func (p *Pipeline) Analyze(
-	ctx context.Context,
-	segments []whisper.Segment,
-) (*AnalyzeOutput, error) {
-	analyzeStart := time.Now()
-	var fullText strings.Builder
-	for _, s := range segments {
-		fullText.WriteString(s.Text)
-		fullText.WriteByte('\n')
+func buildFullText(chunks []ChunkResult) string {
+	total := 0
+	for _, c := range chunks {
+		total += len(c.Text) + 1
 	}
-	analysis, err := p.Analyzer.Analyze(ctx, fullText.String(), segments)
-	if err != nil {
-		return nil, fmt.Errorf("analyze: %w", err)
+	if total == 0 {
+		return ""
 	}
-	log.Printf(
-		"[pipeline] analyze done topics=%d elapsed=%s",
-		len(analysis.Topics),
-		time.Since(analyzeStart),
-	)
-	return &AnalyzeOutput{Summary: analysis.Summary, Topics: analysis.Topics}, nil
-}
-
-// Run executes the full pipeline (transcribe + analyze) for CLI/sidecar/mcp use.
-func (p *Pipeline) Run(ctx context.Context, in Input) (*Result, error) {
-	t, err := p.Transcribe(ctx, in.AudioPath)
-	if err != nil {
-		return nil, err
+	out := make([]byte, 0, total)
+	for _, c := range chunks {
+		out = append(out, c.Text...)
+		out = append(out, '\n')
 	}
-	a, err := p.Analyze(ctx, t.Transcript.Segments)
-	if err != nil {
-		return nil, err
-	}
-	return &Result{
-		Transcript: t.Transcript,
-		Summary:    a.Summary,
-		Topics:     a.Topics,
-		Chunks:     t.Chunks,
-	}, nil
+	return string(out)
 }

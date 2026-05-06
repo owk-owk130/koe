@@ -12,6 +12,7 @@ import {
   markAsTranscribed,
   markAsTranscribeFailed,
 } from "./repositories/job-repository";
+import { analyzeWithGemini } from "./services/gemini-service";
 import { uploadJSON } from "./services/r2-storage";
 import type { Bindings } from "./types";
 
@@ -35,19 +36,6 @@ type TranscribeOutput = {
   chunks: { index: number; start_sec: number; end_sec: number; text: string }[];
 };
 
-type AnalyzeOutput = {
-  summary: string;
-  topics: {
-    index: number;
-    title: string;
-    summary: string;
-    detail: string;
-    start_sec: number;
-    end_sec: number;
-    transcript: string;
-  }[];
-};
-
 const MAX_RETRIES = 3;
 
 // Wraps the Go audio-processing server (packages/worker). The Container base
@@ -59,12 +47,12 @@ export class KoeProcessor extends Container<Bindings> {
 
   constructor(ctx: DurableObject["ctx"], env: Bindings) {
     super(ctx, env);
+    // Gemini は Workers TS 側から直接叩くようになったので、Container には
+    // Whisper 用の env だけ渡せばよい。
     this.envVars = {
       WHISPER_BASE_URL: env.WHISPER_BASE_URL ?? "https://api.openai.com",
       WHISPER_API_KEY: env.WHISPER_API_KEY,
       WHISPER_MODEL: env.WHISPER_MODEL ?? "whisper-1",
-      GEMINI_API_KEY: env.GEMINI_API_KEY,
-      GEMINI_MODEL: env.GEMINI_MODEL ?? "gemini-2.0-flash-lite",
     };
   }
 
@@ -221,20 +209,12 @@ export class KoeProcessor extends Container<Bindings> {
     }
     const transcript = await transcriptObj.json<{ text: string; segments: Segment[] }>();
 
-    const response = await this.containerFetch(
-      new Request("http://container/analyze", {
-        method: "POST",
-        body: JSON.stringify({ segments: transcript.segments }),
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`container /analyze error (${response.status}): ${text}`);
-    }
-
-    const out = await response.json<AnalyzeOutput>();
+    // Gemini を Workers TS から直接呼ぶ。Container を起こす必要がないので、
+    // analyze 単独リトライのレイテンシ・課金が大きく減る。
+    const out = await analyzeWithGemini(transcript.segments, {
+      apiKey: this.env.GEMINI_API_KEY,
+      model: this.env.GEMINI_MODEL ?? "gemini-2.0-flash-lite",
+    });
 
     await uploadJSON(this.env.BUCKET, `${job.userId}/results/${job.jobId}/topics.json`, out.topics);
 

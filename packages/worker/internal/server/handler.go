@@ -12,15 +12,13 @@ import (
 	"time"
 
 	"github.com/owk-owk130/koe/packages/worker/internal/pipeline"
-	"github.com/owk-owk130/koe/packages/worker/internal/whisper"
 )
 
-// Runner abstracts the two pipeline phases for testability.
-// /transcribe → Transcribe (split + whisper)
-// /analyze    → Analyze (gemini, given pre-computed segments)
+// Runner abstracts the transcribe phase for testability. Topic analysis is
+// handled by the Workers TS side directly against Gemini, so the container
+// only exposes the audio-processing endpoint.
 type Runner interface {
 	Transcribe(ctx context.Context, audioPath string) (*pipeline.TranscribeOutput, error)
-	Analyze(ctx context.Context, segments []whisper.Segment) (*pipeline.AnalyzeOutput, error)
 }
 
 // Handler holds HTTP handler dependencies.
@@ -35,9 +33,6 @@ func (h *Handler) Mux() http.Handler {
 
 	mux.HandleFunc("POST /transcribe", h.handleTranscribe)
 	mux.HandleFunc("/transcribe", h.handleMethodNotAllowed)
-
-	mux.HandleFunc("POST /analyze", h.handleAnalyze)
-	mux.HandleFunc("/analyze", h.handleMethodNotAllowed)
 
 	return mux
 }
@@ -88,36 +83,6 @@ func (h *Handler) handleTranscribe(w http.ResponseWriter, r *http.Request) {
 	log.Printf(
 		"[transcribe] ok chunks=%d elapsed=%s",
 		len(out.Chunks),
-		time.Since(start),
-	)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
-}
-
-type analyzeRequest struct {
-	Segments []whisper.Segment `json:"segments"`
-}
-
-func (h *Handler) handleAnalyze(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
-	var req analyzeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
-		return
-	}
-	log.Printf("[analyze] start segments=%d", len(req.Segments))
-
-	out, err := h.Runner.Analyze(r.Context(), req.Segments)
-	if err != nil {
-		log.Printf("[analyze] failed after %s: %v", time.Since(start), err)
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("analyze failed: %v", err))
-		return
-	}
-	log.Printf(
-		"[analyze] ok topics=%d elapsed=%s",
-		len(out.Topics),
 		time.Since(start),
 	)
 
