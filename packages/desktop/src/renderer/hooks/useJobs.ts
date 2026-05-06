@@ -109,6 +109,34 @@ export function useJobTopics(jobId: string | null, enabled: boolean) {
   });
 }
 
+export interface JobTranscript {
+  text: string;
+  segments: { text: string; start_sec: number; end_sec: number }[];
+}
+
+// The raw Whisper transcript persisted to R2 during the transcribe phase.
+// Available once the job reaches `transcribed` (i.e. before topic analysis
+// finishes) so users can read the unfiltered transcription independently of
+// Gemini's topic-level summaries.
+export function useJobTranscript(jobId: string | null, enabled: boolean) {
+  const { token } = useAuth();
+  return useQuery<JobTranscript>({
+    queryKey: [...JOBS_KEY, "transcript", jobId],
+    queryFn: async () => {
+      const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}/transcript`, {
+        headers: authHeaders(token),
+      });
+      if (!res.ok) throw new Error(`Failed to fetch transcript: ${res.status}`);
+      return res.json();
+    },
+    enabled: !!jobId && !!token && enabled,
+    // Legacy jobs that completed before the two-phase split keep transcript_key
+    // null and the API legitimately returns 404 for them. Skip the React Query
+    // default retry so opening such jobs doesn't hammer the endpoint.
+    retry: false,
+  });
+}
+
 export function useCreateJob() {
   const { token } = useAuth();
   const queryClient = useQueryClient();

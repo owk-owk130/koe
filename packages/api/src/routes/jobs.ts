@@ -11,7 +11,7 @@ import {
   listJobsByUser,
 } from "~/repositories/job-repository";
 import { enqueueJob } from "~/services/container-service";
-import { deleteByPrefix, uploadAudio } from "~/services/r2-storage";
+import { deleteByPrefix, downloadJSON, uploadAudio } from "~/services/r2-storage";
 import type { Env } from "~/types";
 
 const audioFormSchema = z.object({
@@ -150,6 +150,39 @@ const jobs = new Hono<Env>()
         end_sec: t.endSec,
         transcript: t.transcript,
       })),
+    });
+  })
+  // Returns the raw Whisper transcript persisted in R2 during the transcribe
+  // phase. UI uses this for the "全文" section, which shows the unfiltered
+  // transcription separately from Gemini's topic-level summaries.
+  .get("/:id/transcript", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    const job = await findJobById(c.env.DB, c.req.param("id"));
+
+    if (!job || job.userId !== user.id) {
+      throw new AppError(404, "NOT_FOUND", "Job not found");
+    }
+
+    if (!job.transcriptKey) {
+      // Job hasn't reached the transcribed state yet (still pending /
+      // transcribing, or it was a legacy single-phase job that never
+      // recorded a transcript_key).
+      throw new AppError(404, "NOT_FOUND", "Transcript not available for this job yet");
+    }
+
+    const data = await downloadJSON<{
+      text: string;
+      segments: { text: string; start_sec: number; end_sec: number }[];
+    }>(c.env.BUCKET, job.transcriptKey);
+
+    if (!data) {
+      throw new AppError(404, "NOT_FOUND", "Transcript missing from storage");
+    }
+
+    return c.json({
+      text: data.text,
+      segments: data.segments,
     });
   })
   // Re-runs the analyze phase for a job whose transcript has already been

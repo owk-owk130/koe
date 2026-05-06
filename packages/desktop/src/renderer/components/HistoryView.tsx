@@ -5,6 +5,7 @@ import {
   useDeleteJob,
   useJob,
   useJobTopics,
+  useJobTranscript,
   useJobs,
   useReanalyzeJob,
 } from "~/renderer/hooks/useJobs";
@@ -77,10 +78,22 @@ function JobList({ onSelect }: { onSelect: (id: string) => void }) {
   );
 }
 
+// Transcript is available once the job reaches `transcribed`; it persists
+// through analyzing / completed / analyze_failed and can be inspected
+// independently of the topic analysis.
+const TRANSCRIPT_AVAILABLE_STATUSES = new Set([
+  "transcribed",
+  "analyzing",
+  "completed",
+  "analyze_failed",
+]);
+
 function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void }) {
   const jobQuery = useJob(jobId);
   const job = jobQuery.data;
   const topicsQuery = useJobTopics(jobId, job?.status === "completed");
+  const transcriptAvailable = job ? TRANSCRIPT_AVAILABLE_STATUSES.has(job.status) : false;
+  const transcriptQuery = useJobTranscript(jobId, transcriptAvailable);
   const deleteJob = useDeleteJob();
   const reanalyzeJob = useReanalyzeJob();
   const [confirming, setConfirming] = useState(false);
@@ -215,6 +228,23 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
             {job.summary}
           </p>
         </div>
+      )}
+
+      {transcriptAvailable && transcriptQuery.data?.text && (
+        <details className="group rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white p-4 [&_summary::-webkit-details-marker]:hidden">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[13px] font-semibold text-text-primary">
+            <span>全文文字起こし</span>
+            <span className="text-[11px] font-normal text-text-secondary group-open:hidden">
+              クリックで展開
+            </span>
+            <span className="hidden text-[11px] font-normal text-text-secondary group-open:inline">
+              クリックで折りたたむ
+            </span>
+          </summary>
+          <p className="mt-3 whitespace-pre-wrap text-[13px] leading-relaxed text-text-primary">
+            {transcriptQuery.data.text}
+          </p>
+        </details>
       )}
 
       {topics.length > 0 && (

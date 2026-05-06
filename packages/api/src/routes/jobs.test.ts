@@ -133,6 +133,90 @@ describe("GET /api/v1/jobs/:id/topics", () => {
   });
 });
 
+describe("GET /api/v1/jobs/:id/transcript", () => {
+  const seedJob = async (id: string, transcriptKey: string | null, userId = "jobs-user-1") => {
+    await env.DB.prepare(
+      "INSERT INTO jobs (id, user_id, status, audio_key, transcript_key) VALUES (?, ?, 'completed', ?, ?)",
+    )
+      .bind(id, userId, `${userId}/audio/${id}/original.mp3`, transcriptKey)
+      .run();
+  };
+
+  it("returns 401 without auth", async () => {
+    await seedJob("tx-401", "jobs-user-1/results/tx-401/transcript.json");
+    const res = await app.request("/api/v1/jobs/tx-401/transcript", {}, makeEnv());
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 when the job belongs to another user", async () => {
+    await createUser(env.DB, {
+      id: "jobs-user-other-tx",
+      googleId: "g-jobs-other-tx",
+      email: "other-tx@test.com",
+      name: "Other",
+    });
+    const key = "jobs-user-other-tx/results/tx-other/transcript.json";
+    await seedJob("tx-other", key, "jobs-user-other-tx");
+    await env.BUCKET.put(key, JSON.stringify({ text: "secret", segments: [] }));
+
+    const res = await app.request(
+      "/api/v1/jobs/tx-other/transcript",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the job has no transcript_key yet", async () => {
+    await seedJob("tx-no-key", null);
+    const res = await app.request(
+      "/api/v1/jobs/tx-no-key/transcript",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the transcript_key points at a missing R2 object", async () => {
+    await seedJob("tx-missing", "jobs-user-1/results/tx-missing/transcript.json");
+    const res = await app.request(
+      "/api/v1/jobs/tx-missing/transcript",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns the transcript text and segments from R2", async () => {
+    const key = "jobs-user-1/results/tx-ok/transcript.json";
+    await seedJob("tx-ok", key);
+    await env.BUCKET.put(
+      key,
+      JSON.stringify({
+        text: "hello\nworld",
+        segments: [
+          { text: "hello", start_sec: 0, end_sec: 1 },
+          { text: "world", start_sec: 1, end_sec: 2 },
+        ],
+      }),
+    );
+
+    const res = await app.request(
+      "/api/v1/jobs/tx-ok/transcript",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json<{
+      text: string;
+      segments: { text: string; start_sec: number; end_sec: number }[];
+    }>();
+    expect(body.text).toBe("hello\nworld");
+    expect(body.segments).toHaveLength(2);
+    expect(body.segments[0].text).toBe("hello");
+  });
+});
+
 describe("DELETE /api/v1/jobs/:id", () => {
   it("returns 401 without auth", async () => {
     const res = await app.request("/api/v1/jobs/some-id", { method: "DELETE" }, makeEnv());
