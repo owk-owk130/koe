@@ -7,7 +7,6 @@ function createJwt(payload: Record<string, unknown>): string {
   return `${header}.${body}.fake-signature`;
 }
 
-// hono/jwt が出力するのと同じ base64url + UTF-8 でエンコードして JWT を組み立てる
 function createJwtBase64Url(payload: Record<string, unknown>): string {
   const toB64Url = (s: string) => {
     const bytes = new TextEncoder().encode(s);
