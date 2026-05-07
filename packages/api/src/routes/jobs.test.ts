@@ -133,6 +133,53 @@ describe("POST /api/v1/jobs", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 400 when a chunk has endSec <= startSec", async () => {
+    const form = buildJobForm({
+      chunks: [{ index: 0, startSec: 10, endSec: 10 }],
+    });
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when chunk indices are duplicated", async () => {
+    const form = buildJobForm({
+      chunks: [
+        { index: 0, startSec: 0, endSec: 60 },
+        { index: 0, startSec: 60, endSec: 90 },
+      ],
+    });
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when duration_sec is not a finite non-negative number", async () => {
+    const form = buildJobForm({});
+    form.set("duration_sec", "not-a-number");
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+
+    const form2 = buildJobForm({});
+    form2.set("duration_sec", "-5");
+    const res2 = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form2 },
+      makeEnv(),
+    );
+    expect(res2.status).toBe(400);
+  });
+
   it("returns 400 when a chunk file is missing for the declared index", async () => {
     const form = buildJobForm({
       chunks: [

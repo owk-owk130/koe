@@ -19,13 +19,28 @@ import type { Env } from "~/types";
 // packages/desktop/src/renderer/lib/audio-chunker.ts), so the API receives
 // the chunks directly and persists each one to R2. The Workers Containers
 // path is gone — DO Whisper-calls these chunks in the transcribe phase.
-const chunkMetaSchema = z.object({
-  index: z.number().int().min(0),
-  startSec: z.number().min(0),
-  endSec: z.number().positive(),
-});
+//
+// Schema is defensive about endSec/startSec ordering and duplicate indices
+// because the server trusts these fields to write D1 rows and R2 keys; a
+// duplicated index would silently overwrite a chunk and a zero-length range
+// would yield a corrupt timeline. Bad clients hit a clean 400 instead of
+// poisoning storage.
+const chunkMetaSchema = z
+  .object({
+    index: z.number().int().min(0),
+    startSec: z.number().min(0),
+    endSec: z.number().positive(),
+  })
+  .refine((c) => c.endSec > c.startSec, {
+    message: "endSec must be greater than startSec",
+  });
 
-const chunksMetaArraySchema = z.array(chunkMetaSchema).min(1);
+const chunksMetaArraySchema = z
+  .array(chunkMetaSchema)
+  .min(1)
+  .refine((chunks) => new Set(chunks.map((c) => c.index)).size === chunks.length, {
+    message: "chunk indices must be unique",
+  });
 
 // Maps the recorded blob's MIME type back to a stable file extension. We
 // preserve the original encoding rather than re-encoding so the playback
@@ -87,8 +102,14 @@ const jobs = new Hono<Env>()
     });
 
     const durationRaw = form.get("duration_sec");
-    const audioDurationSec =
-      typeof durationRaw === "string" && durationRaw.length > 0 ? Number(durationRaw) : null;
+    let audioDurationSec: number | null = null;
+    if (typeof durationRaw === "string" && durationRaw.length > 0) {
+      const parsed = Number(durationRaw);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new AppError(400, "BAD_REQUEST", "duration_sec must be a finite non-negative number");
+      }
+      audioDurationSec = parsed;
+    }
 
     const jobId = crypto.randomUUID();
     const originalExt = extensionFor(original);
