@@ -217,15 +217,22 @@ export function JobResultPanel({ jobId, onDeleted }: { jobId: string; onDeleted:
 
 // Lazy-loads the original recording from the API on demand. Showing a button
 // instead of auto-fetching keeps history list previews from pulling MB of
-// audio the user may not want to listen to. The blob URL is revoked on unmount
-// so we don't leak object URLs across job switches.
+// audio the user may not want to listen to. The query caches the Blob; this
+// component owns the object URL lifecycle (create on mount once data arrives,
+// revoke on unmount) so reopening a job within gcTime gets a fresh URL bound
+// to the cached Blob instead of a revoked one.
 function AudioPlayer({ jobId }: { jobId: string }) {
   const [requested, setRequested] = useState(false);
   const audioQuery = useJobAudio(jobId, requested);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!audioQuery.data) return;
+    const url = URL.createObjectURL(audioQuery.data);
+    setAudioUrl(url);
     return () => {
-      if (audioQuery.data) URL.revokeObjectURL(audioQuery.data);
+      URL.revokeObjectURL(url);
+      setAudioUrl(null);
     };
   }, [audioQuery.data]);
 
@@ -259,12 +266,12 @@ function AudioPlayer({ jobId }: { jobId: string }) {
     );
   }
 
-  if (!audioQuery.data) return null;
+  if (!audioUrl) return null;
 
-  // Element key includes the data URL so swapping jobs replaces the player
-  // instead of reusing the previous job's media element state.
+  // Element key includes the URL so swapping jobs replaces the player instead
+  // of reusing the previous job's media element state.
   return (
-    <audio key={audioQuery.data} src={audioQuery.data} controls className="w-full">
+    <audio key={audioUrl} src={audioUrl} controls className="w-full">
       <track kind="captions" />
     </audio>
   );

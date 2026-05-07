@@ -144,22 +144,22 @@ export function useJobTranscript(jobId: string | null, enabled: boolean) {
 // straight to R2 and drives Whisper from the DurableObject (see
 // packages/api/src/processor.ts); chunks are deleted server-side once the
 // transcript is committed, leaving only the original behind.
-// Fetches the original recording from the API and exposes it as an object URL
-// the `<audio>` element can consume. We download to a Blob (instead of using
-// the URL directly) because the endpoint requires Authorization headers, which
-// `<audio src>` cannot attach. Lazy: only runs when `enabled` flips true so we
-// don't pull MB-sized recordings for jobs the user never plays.
+// Fetches the original recording from the API. We cache the Blob (not an
+// object URL) because consumers create their own URL via URL.createObjectURL
+// and revoke it on unmount; caching a URL would let revoked URLs leak across
+// remounts within gcTime, breaking playback when the same job is reopened.
+// Lazy: only runs when `enabled` flips true so we don't pull MB-sized
+// recordings for jobs the user never plays.
 export function useJobAudio(jobId: string | null, enabled: boolean) {
   const { token } = useAuth();
-  return useQuery<string>({
+  return useQuery<Blob>({
     queryKey: [...JOBS_KEY, "audio", jobId],
     queryFn: async () => {
       const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}/audio`, {
         headers: authHeaders(token),
       });
       if (!res.ok) throw new Error(`Failed to fetch audio: ${res.status}`);
-      const blob = await res.blob();
-      return URL.createObjectURL(blob);
+      return res.blob();
     },
     enabled: !!jobId && !!token && enabled,
     staleTime: Infinity,
