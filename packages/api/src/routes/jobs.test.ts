@@ -45,6 +45,10 @@ const buildJobForm = (
     durationSec?: number;
     rawMeta?: string;
     skipMeta?: boolean;
+    skipOriginal?: boolean;
+    originalData?: Uint8Array;
+    originalType?: string;
+    originalFilename?: string;
   } = {},
 ): FormData => {
   const form = new FormData();
@@ -59,6 +63,16 @@ const buildJobForm = (
   }
   if (opts.durationSec !== undefined) {
     form.append("duration_sec", String(opts.durationSec));
+  }
+  if (!opts.skipOriginal) {
+    form.append(
+      "original",
+      new File(
+        [opts.originalData ?? new Uint8Array([9, 9, 9])],
+        opts.originalFilename ?? "original.webm",
+        { type: opts.originalType ?? "audio/webm" },
+      ),
+    );
   }
   for (const c of chunks) {
     if (c.skipFile) continue;
@@ -109,6 +123,16 @@ describe("POST /api/v1/jobs", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 400 when the original audio file is missing", async () => {
+    const form = buildJobForm({ skipOriginal: true });
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("returns 400 when a chunk file is missing for the declared index", async () => {
     const form = buildJobForm({
       chunks: [
@@ -124,13 +148,14 @@ describe("POST /api/v1/jobs", () => {
     expect(res.status).toBe(400);
   });
 
-  it("creates a job with chunks and persists each chunk to R2 and D1", async () => {
+  it("creates a job with chunks and persists original + each chunk to R2 and D1", async () => {
     const form = buildJobForm({
       chunks: [
         { index: 0, startSec: 0, endSec: 60, data: new Uint8Array([1, 2, 3]) },
         { index: 1, startSec: 60, endSec: 90, data: new Uint8Array([4, 5, 6]) },
       ],
       durationSec: 90,
+      originalData: new Uint8Array([7, 8, 9, 10]),
     });
     const res = await app.request(
       "/api/v1/jobs",
@@ -141,7 +166,11 @@ describe("POST /api/v1/jobs", () => {
     const body = await res.json<{ id: string; status: string; audio_key: string }>();
     expect(body.id).toBeDefined();
     expect(body.status).toBe("pending");
-    expect(body.audio_key).toMatch(/^jobs-user-1\/audio\/.+\/$/);
+    expect(body.audio_key).toBe(`jobs-user-1/audio/${body.id}/original.webm`);
+
+    const original = await env.BUCKET.get(body.audio_key);
+    expect(original).not.toBeNull();
+    expect(await original?.arrayBuffer()).toEqual(new Uint8Array([7, 8, 9, 10]).buffer);
 
     const chunk0 = await env.BUCKET.get(`jobs-user-1/audio/${body.id}/chunks/0.wav`);
     const chunk1 = await env.BUCKET.get(`jobs-user-1/audio/${body.id}/chunks/1.wav`);
@@ -234,6 +263,67 @@ describe("GET /api/v1/jobs/:id/topics", () => {
     const body = await res.json<{ topics: { title: string }[] }>();
     expect(body.topics.length).toBe(1);
     expect(body.topics[0].title).toBe("Topic A");
+  });
+});
+
+describe("GET /api/v1/jobs/:id/audio", () => {
+  const seedJob = async (id: string, audioKey: string, userId = "jobs-user-1") => {
+    await env.DB.prepare("INSERT INTO jobs (id, user_id, status, audio_key) VALUES (?, ?, ?, ?)")
+      .bind(id, userId, "completed", audioKey)
+      .run();
+  };
+
+  it("returns 401 without auth", async () => {
+    await seedJob("au-401", "jobs-user-1/audio/au-401/original.webm");
+    const res = await app.request("/api/v1/jobs/au-401/audio", {}, makeEnv());
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 when the job belongs to another user", async () => {
+    await createUser(env.DB, {
+      id: "jobs-user-other-au",
+      googleId: "g-jobs-other-au",
+      email: "other-au@test.com",
+      name: "Other",
+    });
+    const key = "jobs-user-other-au/audio/au-other/original.webm";
+    await seedJob("au-other", key, "jobs-user-other-au");
+    await env.BUCKET.put(key, new Uint8Array([1, 2, 3]));
+
+    const res = await app.request(
+      "/api/v1/jobs/au-other/audio",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the original is missing in R2", async () => {
+    await seedJob("au-missing", "jobs-user-1/audio/au-missing/original.webm");
+    const res = await app.request(
+      "/api/v1/jobs/au-missing/audio",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("streams the original audio bytes from R2", async () => {
+    const key = "jobs-user-1/audio/au-ok/original.webm";
+    await seedJob("au-ok", key);
+    await env.BUCKET.put(key, new Uint8Array([1, 2, 3, 4, 5]), {
+      httpMetadata: { contentType: "audio/webm" },
+    });
+
+    const res = await app.request(
+      "/api/v1/jobs/au-ok/audio",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("audio/webm");
+    const body = new Uint8Array(await res.arrayBuffer());
+    expect(body).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
   });
 });
 

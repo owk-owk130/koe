@@ -27,6 +27,26 @@ const chunkMetaSchema = z.object({
 
 const chunksMetaArraySchema = z.array(chunkMetaSchema).min(1);
 
+// Maps the recorded blob's MIME type back to a stable file extension. We
+// preserve the original encoding rather than re-encoding so the playback
+// quality matches what the user heard while recording.
+const MIME_EXTENSION: Record<string, string> = {
+  "audio/webm": "webm",
+  "audio/mpeg": "mp3",
+  "audio/mp4": "m4a",
+  "audio/m4a": "m4a",
+  "audio/wav": "wav",
+  "audio/x-wav": "wav",
+  "audio/ogg": "ogg",
+};
+
+const extensionFor = (file: File): string => {
+  const fromName = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : null;
+  if (fromName && /^[a-z0-9]{1,8}$/.test(fromName)) return fromName;
+  const mime = file.type.split(";")[0]?.trim().toLowerCase();
+  return (mime && MIME_EXTENSION[mime]) ?? "webm";
+};
+
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).catch(20),
   offset: z.coerce.number().int().min(0).catch(0),
@@ -53,6 +73,11 @@ const jobs = new Hono<Env>()
       throw new AppError(400, "BAD_REQUEST", `invalid chunks_meta: ${message}`);
     }
 
+    const original = form.get("original");
+    if (!(original instanceof File)) {
+      throw new AppError(400, "BAD_REQUEST", "original audio is required");
+    }
+
     const chunkFiles = chunksMeta.map((meta) => {
       const file = form.get(`chunk_${meta.index}`);
       if (!(file instanceof File)) {
@@ -66,10 +91,18 @@ const jobs = new Hono<Env>()
       typeof durationRaw === "string" && durationRaw.length > 0 ? Number(durationRaw) : null;
 
     const jobId = crypto.randomUUID();
-    const audioKey = `${user.id}/audio/${jobId}/`;
+    const originalExt = extensionFor(original);
+    const audioKey = `${user.id}/audio/${jobId}/original.${originalExt}`;
 
-    // Upload all chunks first so a partial failure leaves no D1 row pointing at
-    // missing R2 objects.
+    // Upload original first so failures during chunk upload still leave a
+    // playable artifact behind. R2 puts are individually atomic, so chunks
+    // uploading after this can fail without orphaning the original (the
+    // POST will return 500 and the user can retry; DELETE /jobs cleans up
+    // any partial state via prefix delete).
+    await c.env.BUCKET.put(audioKey, await original.arrayBuffer(), {
+      httpMetadata: { contentType: original.type || "application/octet-stream" },
+    });
+
     const chunkInputs = await Promise.all(
       chunkFiles.map(async ({ meta, file }) => {
         const chunkKey = `${user.id}/audio/${jobId}/chunks/${meta.index}.wav`;
@@ -200,6 +233,32 @@ const jobs = new Hono<Env>()
         end_sec: t.endSec,
         transcript: t.transcript,
       })),
+    });
+  })
+  // Streams the original recording back so the client can play it. Auth +
+  // owner check live here; we don't expose presigned URLs because they would
+  // bypass the requireAuth middleware. R2 reads are cheap and free egress on
+  // Cloudflare's plan, so streaming through the Worker is fine for the
+  // current size envelope.
+  .get("/:id/audio", async (c) => {
+    const user = c.get("user");
+    if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
+    const job = await findJobById(c.env.DB, c.req.param("id"));
+
+    if (!job || job.userId !== user.id) {
+      throw new AppError(404, "NOT_FOUND", "Job not found");
+    }
+
+    const obj = await c.env.BUCKET.get(job.audioKey);
+    if (!obj) {
+      throw new AppError(404, "NOT_FOUND", "Audio missing from storage");
+    }
+
+    return new Response(obj.body, {
+      headers: {
+        "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+        "Cache-Control": "private, max-age=300",
+      },
     });
   })
   // Returns the raw Whisper transcript persisted in R2 during the transcribe
