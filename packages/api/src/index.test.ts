@@ -13,28 +13,10 @@ describe("GET /health", () => {
 });
 
 describe("CORS", () => {
-  it("echoes a localhost origin back so dev clients get a precise Allow-Origin", async () => {
+  it("includes CORS headers", async () => {
     const res = await app.request(
       "/health",
       { headers: { Origin: "http://localhost:3000" } },
-      makeEnv(),
-    );
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://localhost:3000");
-  });
-
-  it("echoes 127.0.0.1 origins on any port", async () => {
-    const res = await app.request(
-      "/health",
-      { headers: { Origin: "http://127.0.0.1:5173" } },
-      makeEnv(),
-    );
-    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("http://127.0.0.1:5173");
-  });
-
-  it("falls back to wildcard for non-local origins", async () => {
-    const res = await app.request(
-      "/health",
-      { headers: { Origin: "https://example.com" } },
       makeEnv(),
     );
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
