@@ -7,7 +7,13 @@ export type Topic = typeof topics.$inferSelect;
 
 export const createJob = async (
   d1: D1Database,
-  input: { id: string; userId: string; audioKey: string },
+  input: {
+    id: string;
+    userId: string;
+    audioKey: string;
+    audioDurationSec?: number | null;
+    totalChunks?: number | null;
+  },
 ): Promise<Job> => {
   const db = getDb(d1);
   const [row] = await db
@@ -16,6 +22,8 @@ export const createJob = async (
       id: input.id,
       userId: input.userId,
       audioKey: input.audioKey,
+      audioDurationSec: input.audioDurationSec ?? null,
+      totalChunks: input.totalChunks ?? null,
     })
     .returning();
   return row;

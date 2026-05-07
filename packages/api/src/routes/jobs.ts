@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AppError } from "~/lib/errors";
 import { validate } from "~/lib/validation";
 import { requireAuth } from "~/middleware/auth";
+import { createChunks } from "~/repositories/chunk-repository";
 import {
   createJob,
   deleteJob,
@@ -14,9 +15,17 @@ import { enqueueJob } from "~/services/container-service";
 import { deleteByPrefix, downloadJSON, uploadAudio } from "~/services/r2-storage";
 import type { Env } from "~/types";
 
-const audioFormSchema = z.object({
-  audio: z.instanceof(File),
+// Desktop side splits audio into ≤60s chunks before upload (see
+// packages/desktop/src/renderer/lib/audio-chunker.ts), so the API receives
+// the chunks directly and persists each one to R2. The Workers Containers
+// path is gone — DO Whisper-calls these chunks in the transcribe phase.
+const chunkMetaSchema = z.object({
+  index: z.number().int().min(0),
+  startSec: z.number().min(0),
+  endSec: z.number().positive(),
 });
+
+const chunksMetaArraySchema = z.array(chunkMetaSchema).min(1);
 
 const listQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).catch(20),
@@ -25,24 +34,65 @@ const listQuerySchema = z.object({
 
 const jobs = new Hono<Env>()
   .use("/*", requireAuth())
-  .post("/", validate("form", audioFormSchema), async (c) => {
-    const { audio: file } = c.req.valid("form");
-
+  .post("/", async (c) => {
     const user = c.get("user");
     if (!user) throw new AppError(401, "UNAUTHORIZED", "Authentication required");
-    const jobId = crypto.randomUUID();
-    const ext = file.name.split(".").pop() ?? "mp3";
-    const audioKey = `${user.id}/audio/${jobId}/original.${ext}`;
 
-    await uploadAudio(c.env.BUCKET, audioKey, await file.arrayBuffer());
+    const form = await c.req.formData();
+    const metaRaw = form.get("chunks_meta");
+    if (typeof metaRaw !== "string") {
+      throw new AppError(400, "BAD_REQUEST", "chunks_meta is required");
+    }
+
+    let chunksMeta: z.infer<typeof chunksMetaArraySchema>;
+    try {
+      const parsed = chunksMetaArraySchema.parse(JSON.parse(metaRaw));
+      chunksMeta = parsed;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new AppError(400, "BAD_REQUEST", `invalid chunks_meta: ${message}`);
+    }
+
+    const chunkFiles = chunksMeta.map((meta) => {
+      const file = form.get(`chunk_${meta.index}`);
+      if (!(file instanceof File)) {
+        throw new AppError(400, "BAD_REQUEST", `missing chunk file for index ${meta.index}`);
+      }
+      return { meta, file };
+    });
+
+    const durationRaw = form.get("duration_sec");
+    const audioDurationSec =
+      typeof durationRaw === "string" && durationRaw.length > 0 ? Number(durationRaw) : null;
+
+    const jobId = crypto.randomUUID();
+    const audioKey = `${user.id}/audio/${jobId}/`;
+
+    // Upload all chunks first so a partial failure leaves no D1 row pointing at
+    // missing R2 objects.
+    const chunkInputs = await Promise.all(
+      chunkFiles.map(async ({ meta, file }) => {
+        const chunkKey = `${user.id}/audio/${jobId}/chunks/${meta.index}.wav`;
+        await uploadAudio(c.env.BUCKET, chunkKey, await file.arrayBuffer());
+        return {
+          id: crypto.randomUUID(),
+          chunkIndex: meta.index,
+          audioKey: chunkKey,
+          startSec: meta.startSec,
+          endSec: meta.endSec,
+        };
+      }),
+    );
 
     const job = await createJob(c.env.DB, {
       id: jobId,
       userId: user.id,
       audioKey,
+      audioDurationSec,
+      totalChunks: chunkInputs.length,
     });
+    await createChunks(c.env.DB, jobId, chunkInputs);
 
-    // Enqueue background processing via DurableObject alarm
     try {
       if (c.env.PROCESSOR) {
         c.executionCtx.waitUntil(
