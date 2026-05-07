@@ -7,6 +7,19 @@ function createJwt(payload: Record<string, unknown>): string {
   return `${header}.${body}.fake-signature`;
 }
 
+// hono/jwt が出力するのと同じ base64url + UTF-8 でエンコードして JWT を組み立てる
+function createJwtBase64Url(payload: Record<string, unknown>): string {
+  const toB64Url = (s: string) => {
+    const bytes = new TextEncoder().encode(s);
+    let binary = "";
+    for (const b of bytes) binary += String.fromCharCode(b);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
+  const header = toB64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+  const body = toB64Url(JSON.stringify(payload));
+  return `${header}.${body}.fake-signature`;
+}
+
 describe("isTokenExpired", () => {
   it("returns false for a token with future exp", () => {
     const token = createJwt({ exp: Math.floor(Date.now() / 1000) + 3600 });
@@ -51,5 +64,19 @@ describe("parseUser", () => {
     const user = parseUser(token);
     expect(user?.id).toBe("user-2");
     expect(user?.name).toBeUndefined();
+  });
+
+  it("decodes base64url JWT with non-ASCII name", () => {
+    const token = createJwtBase64Url({
+      sub: "user-3",
+      email: "kanji@example.com",
+      name: "山田 太郎",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+    expect(parseUser(token)).toEqual({
+      id: "user-3",
+      email: "kanji@example.com",
+      name: "山田 太郎",
+    });
   });
 });
