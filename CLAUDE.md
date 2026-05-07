@@ -9,44 +9,43 @@
 ```
 Desktop App (Electron + React)
     ├─ 録音 (MediaRecorder)
-    ├─ ジョブ作成 (multipart form)
+    ├─ Web Audio API でデコード → 16kHz mono にリサンプリング → 60s チャンクに分割 (WAV)
+    ├─ ジョブ作成 (multipart で chunk 群 + メタ JSON)
     └─ ジョブポーリング
          ▼
 Workers (Hono/TS) ── API / 認証 (すべて requireAuth)
-    │                   ├── R2 (音声 + 結果 JSON)
-    │                   └── D1 (ジョブ/トピックのメタ情報)
-    ▼ DurableObject (KoeProcessor) ── alarm パターンで非同期ジョブ処理
-Workers Containers (Go HTTP :8080) ── 音声処理
-    ├── ffmpeg 音声分割
-    ├── Whisper (Workers AI)
-    └── LLM トピック分割 (Gemini Flash-Lite)
+    ├── R2 (chunk 音声 + 結果 JSON)
+    ├── D1 (ジョブ/チャンク/トピックのメタ情報)
+    └── DurableObject (KoeProcessor) ── alarm パターンで非同期ジョブ処理
+            ├── Whisper (Workers AI、chunk 単位で順次直呼び)
+            └── トピック分割 (Gemini Flash)
 ```
 
-Desktop アプリ側には音声処理ロジックを持たず、録音済み音声を API に送ってサーバー側で処理する。
-GPL な ffmpeg 等の同梱がないため MIT のまま配布できる。
+ffmpeg 含む音声処理ロジックを Desktop 側に寄せ、サーバ側 (Workers) は I/O と
+Whisper/Gemini への薄いオーケストレーションだけを担う。Desktop は Web Audio API
+だけで済むので、GPL/LGPL バイナリの同梱は不要で MIT のまま配布できる。
 
 ### パッケージ構成（モノレポ）
 
 ```
 packages/
-├── api/       # Workers + Hono (TS) - API / 認証 / MCP
-├── worker/    # Go - 音声処理 (Workers Containers)
+├── api/       # Workers + Hono (TS) - API / 認証 / MCP / Whisper・Gemini オーケストレーション
 ├── shared/    # 共有ユーティリティ (format / auth / API client)
-└── desktop/   # Electron デスクトップアプリ
+└── desktop/   # Electron デスクトップアプリ (録音 + チャンク分割)
 ```
 
 ### 技術スタック
 
-| レイヤー     | 技術                                                                             |
-| ------------ | -------------------------------------------------------------------------------- |
-| API          | Cloudflare Workers + Hono (TypeScript)                                           |
-| 音声処理     | Go (Workers Containers のみ)                                                     |
-| 文字起こし   | Workers AI Whisper (@cf/openai/whisper-large-v3-turbo)、OpenAI互換で差し替え可能 |
-| トピック分割 | Gemini Flash-Lite（デフォルト）、interface で差し替え可能                        |
-| DB           | Cloudflare D1                                                                    |
-| Storage      | Cloudflare R2                                                                    |
-| 認証         | Google OAuth (Device Flow) → JWT                                                 |
-| フロント     | Electron + React (デスクトップアプリ)                                            |
+| レイヤー     | 技術                                                                          |
+| ------------ | ----------------------------------------------------------------------------- |
+| API          | Cloudflare Workers + Hono (TypeScript)                                        |
+| 音声分割     | Desktop の Web Audio API (16kHz mono / WAV)                                   |
+| 文字起こし   | Workers AI Whisper (@cf/openai/whisper-large-v3-turbo)、Workers TS から直呼び |
+| トピック分割 | Gemini Flash（デフォルト）、Workers TS から直呼び                             |
+| DB           | Cloudflare D1                                                                 |
+| Storage      | Cloudflare R2                                                                 |
+| 認証         | Google OAuth (Device Flow) → JWT                                              |
+| フロント     | Electron + React (デスクトップアプリ)                                         |
 
 ### API 設計
 
@@ -54,7 +53,7 @@ packages/
 
 ```
 # ジョブ
-POST   /api/v1/jobs              # ジョブ作成（multipart form で音声送信）→ DO で非同期処理
+POST   /api/v1/jobs              # ジョブ作成（multipart で chunks_meta JSON + chunk_N WAV 群）→ DO で非同期処理
 GET    /api/v1/jobs              # ジョブ一覧（自分のだけ）
 GET    /api/v1/jobs/:id          # ジョブ詳細
 DELETE /api/v1/jobs/:id          # ジョブ削除（R2 → D1 の順）
@@ -89,8 +88,7 @@ ALL  /mcp                      # Claude Desktop / モバイル向けリモート
 ### R2 キー設計
 
 ```
-{userId}/audio/{jobId}/original.{ext}
-{userId}/audio/{jobId}/chunks/{index}.mp3
+{userId}/audio/{jobId}/chunks/{index}.wav     # Desktop で事前分割した chunk
 {userId}/results/{jobId}/transcript.json
 {userId}/results/{jobId}/topics.json
 ```
@@ -111,9 +109,9 @@ pending → transcribing → transcribed → analyzing → completed
 
 ### 設計方針
 
-- Whisper / LLM クライアントは interface で抽象化し、baseURL 差し替えで切り替え可能にする
+- Whisper / LLM クライアントは Workers AI / Gemini REST を直接呼び、baseURL 差し替えで AI Gateway に通せる
 - D1 にはメタ情報のみ、巨大テキストは R2 に JSON で保存
-- 長時間音声はチャンク分割（静音検出 + 時間上限）で対応
+- 長時間音声は Desktop 側で 60s 単位の時間分割（静音検出は使わない / Whisper + Gemini で実用上問題なし）
 - 大容量ファイルは R2 Multipart Upload で対応（Desktop v1 では未使用）
 - ジョブは冪等性を担保（チャンクID + 状態管理）
 - transcribe (Whisper) と analyze (Gemini) は独立 phase で動く。transcribe 完了時点で transcript.json を R2 に commit し、analyze で失敗しても Whisper を再課金しない

@@ -19,14 +19,6 @@
     },
   ],
 
-  "containers": [
-    {
-      "class_name": "KoeProcessor",
-      "image": "../worker/Dockerfile",
-      "max_instances": 3,
-    },
-  ],
-
   "durable_objects": {
     "bindings": [
       {
