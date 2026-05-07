@@ -12,7 +12,7 @@ import {
   markAsTranscribeFailed,
 } from "./repositories/job-repository";
 import { analyzeWithGemini } from "./services/gemini-service";
-import { uploadJSON } from "./services/r2-storage";
+import { deleteByPrefix, uploadJSON } from "./services/r2-storage";
 import { transcribeChunk } from "./services/whisper-service";
 import type { Bindings } from "./types";
 
@@ -154,6 +154,12 @@ export class KoeProcessor extends DurableObject<Bindings> {
       text: chunkTexts.join("\n"),
       segments: allSegments,
     });
+
+    // Chunks are only needed during transcribe — once transcript.json is
+    // committed and per-chunk text is in D1, the chunk audio is dead weight.
+    // Delete it before flipping the job to `transcribed` so the R2 footprint
+    // drops to just the original recording + result JSONs.
+    await deleteByPrefix(this.env.BUCKET, `${job.userId}/audio/${job.jobId}/chunks/`);
 
     await markAsTranscribed(this.env.DB, job.jobId, {
       transcriptKey,
