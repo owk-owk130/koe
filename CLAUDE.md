@@ -21,10 +21,6 @@ Workers (Hono/TS) ── API / 認証 (すべて requireAuth)
             └── トピック分割 (Gemini Flash)
 ```
 
-ffmpeg 含む音声処理ロジックを Desktop 側に寄せ、サーバ側 (Workers) は I/O と
-Whisper/Gemini への薄いオーケストレーションだけを担う。Desktop は Web Audio API
-だけで済むので、GPL/LGPL バイナリの同梱は不要で MIT のまま配布できる。
-
 ### パッケージ構成（モノレポ）
 
 ```

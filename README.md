@@ -11,32 +11,29 @@ capture voice and shape it into structured thoughts.
 ```
 Desktop App (Electron + React)
     ├─ 録音 (MediaRecorder)
-    ├─ ジョブ作成 (multipart form)
+    ├─ Web Audio API でデコード → 16kHz mono → 60s WAV チャンクに分割
+    ├─ ジョブ作成 (multipart で原音 + chunk 群 + メタ JSON)
     └─ ジョブポーリング
          ▼
 Workers (Hono/TS) ── API / 認証 (すべて requireAuth)
-    │                   ├── R2 (音声 + 結果 JSON)
-    │                   └── D1 (ジョブ/トピックのメタ情報)
-    ▼ DurableObject (KoeProcessor) ── alarm 非同期
-Workers Containers (Go HTTP :8080) ── 音声処理
-    ├── ffmpeg 音声分割
-    ├── Whisper (Workers AI)
-    └── Gemini トピック分割
+    ├── R2 (原音 + chunk + 結果 JSON)
+    ├── D1 (ジョブ/チャンク/トピックのメタ情報)
+    └── DurableObject (KoeProcessor) ── alarm パターンで非同期処理
+            ├── Whisper (Workers AI、chunk 単位で順次直呼び)
+            └── Gemini (トピック分割)
 ```
 
 ## Project Structure
 
 ```
 packages/
-├── api/       # Cloudflare Workers + Hono (TypeScript)
-├── worker/    # Go - 音声処理 (Workers Containers)
+├── api/       # Cloudflare Workers + Hono (TypeScript) - API / 認証 / MCP / Whisper・Gemini
 ├── shared/    # 共有ユーティリティ (format / auth / API client)
-└── desktop/   # Electron デスクトップアプリ
+└── desktop/   # Electron デスクトップアプリ (録音 + チャンク分割)
 ```
 
 ## Prerequisites
 
-- [Go](https://go.dev/) 1.26+ (Workers Containers のビルドに使用)
 - [Node.js](https://nodejs.org/) 24+
 - [pnpm](https://pnpm.io/) 10+
 - [Cloudflare account](https://dash.cloudflare.com/) (デプロイ時)
@@ -64,16 +61,6 @@ pnpm dev:api
 
 ```bash
 pnpm dev:desktop
-```
-
-### Docker コンテナの掃除 (dev 用)
-
-`wrangler dev` は Workers Containers をローカルの Docker で起動する。ジョブごとに
-koeprocessor コンテナが立ち上がり、`wrangler` 停止後も滞留することがあるので、必要に
-応じて掃除する:
-
-```bash
-docker ps --filter "ancestor=cloudflare-dev/koeprocessor" -q | xargs -r docker rm -f
 ```
 
 ### MCP Server (リモート)
