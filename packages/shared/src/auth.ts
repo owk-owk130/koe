@@ -1,3 +1,5 @@
+import { decode } from "hono/jwt";
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -6,12 +8,8 @@ export interface AuthUser {
 
 function decodePayload(token: string): Record<string, unknown> | null {
   try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
-    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes));
+    const { payload } = decode(token);
+    return payload as Record<string, unknown>;
   } catch {
     return null;
   }
