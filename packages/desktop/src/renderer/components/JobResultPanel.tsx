@@ -1,9 +1,10 @@
-import { useState } from "react";
-import { Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Loader2, Play, RotateCcw, Trash2 } from "lucide-react";
 import { formatDate, formatDuration } from "@koe/shared";
 import {
   useDeleteJob,
   useJob,
+  useJobAudio,
   useJobTopics,
   useJobTranscript,
   useReanalyzeJob,
@@ -152,6 +153,8 @@ export function JobResultPanel({ jobId, onDeleted }: { jobId: string; onDeleted:
         />
       )}
 
+      <AudioPlayer jobId={jobId} />
+
       {job.summary && (
         <div className="rounded-[12px] border border-[rgba(0,0,0,0.03)] bg-white p-4">
           <h3 className="text-[13px] font-semibold text-text-primary">サマリー</h3>
@@ -209,6 +212,61 @@ export function JobResultPanel({ jobId, onDeleted }: { jobId: string; onDeleted:
         </>
       )}
     </div>
+  );
+}
+
+// Lazy-loads the original recording from the API on demand. Showing a button
+// instead of auto-fetching keeps history list previews from pulling MB of
+// audio the user may not want to listen to. The blob URL is revoked on unmount
+// so we don't leak object URLs across job switches.
+function AudioPlayer({ jobId }: { jobId: string }) {
+  const [requested, setRequested] = useState(false);
+  const audioQuery = useJobAudio(jobId, requested);
+
+  useEffect(() => {
+    return () => {
+      if (audioQuery.data) URL.revokeObjectURL(audioQuery.data);
+    };
+  }, [audioQuery.data]);
+
+  if (!requested) {
+    return (
+      <button
+        type="button"
+        onClick={() => setRequested(true)}
+        className="flex w-fit items-center gap-1.5 rounded-[8px] border border-[rgba(0,0,0,0.06)] bg-white px-3 py-1.5 text-[13px] font-medium text-text-primary hover:border-brand/40 hover:text-brand"
+      >
+        <Play size={14} />
+        原音を再生
+      </button>
+    );
+  }
+
+  if (audioQuery.isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-text-secondary">
+        <Loader2 size={12} className="animate-spin" />
+        音声を読み込み中...
+      </div>
+    );
+  }
+
+  if (audioQuery.error) {
+    return (
+      <p className="rounded-[8px] bg-error/10 p-3 text-xs text-error">
+        音声の読み込みに失敗しました: {audioQuery.error.message}
+      </p>
+    );
+  }
+
+  if (!audioQuery.data) return null;
+
+  // Element key includes the data URL so swapping jobs replaces the player
+  // instead of reusing the previous job's media element state.
+  return (
+    <audio key={audioQuery.data} src={audioQuery.data} controls className="w-full">
+      <track kind="captions" />
+    </audio>
   );
 }
 
