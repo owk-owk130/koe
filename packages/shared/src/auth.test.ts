@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { isTokenExpired, parseUser } from "./auth";
 
-function createJwt(payload: Record<string, unknown>): string {
+const createJwt = (payload: Record<string, unknown>): string => {
   const header = btoa(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const body = btoa(JSON.stringify(payload));
   return `${header}.${body}.fake-signature`;
-}
+};
 
-function createJwtBase64Url(payload: Record<string, unknown>): string {
+const createJwtBase64Url = (payload: Record<string, unknown>): string => {
   const toB64Url = (s: string) => {
     const bytes = new TextEncoder().encode(s);
     let binary = "";
@@ -17,7 +17,7 @@ function createJwtBase64Url(payload: Record<string, unknown>): string {
   const header = toB64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
   const body = toB64Url(JSON.stringify(payload));
   return `${header}.${body}.fake-signature`;
-}
+};
 
 describe("isTokenExpired", () => {
   it("returns false for a token with future exp", () => {
