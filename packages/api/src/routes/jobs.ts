@@ -11,7 +11,7 @@ import {
   findTopicsByJob,
   listJobsByUser,
 } from "~/repositories/job-repository";
-import { enqueueJob } from "~/services/container-service";
+import { enqueueJob } from "~/services/processor-service";
 import { deleteByPrefix, downloadJSON, uploadAudio } from "~/services/r2-storage";
 import type { Env } from "~/types";
 
