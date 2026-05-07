@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "~/renderer/lib/api";
+import { chunkAudioBlob } from "~/renderer/lib/audio-chunker";
 import { useAuth } from "./useAuth";
 
 // Phase-aware statuses produced by the two-phase orchestrator. Legacy values
@@ -50,8 +51,8 @@ const authHeaders = (token: string | null): Record<string, string> =>
 
 // Note: we intentionally do not use the hono client for jobs because its typed
 // responses don't cleanly expose a multipart/form-data `POST /api/v1/jobs` — we
-// fall back to raw fetch for that endpoint and keep the rest on plain fetch for
-// consistency.
+// fall back to raw fetch for that endpoint (Desktop sends pre-split chunks +
+// JSON meta), and keep the rest on plain fetch for consistency.
 export function useJobs() {
   const { token } = useAuth();
   return useQuery<{ jobs: JobSummary[] }>({
@@ -137,13 +138,36 @@ export function useJobTranscript(jobId: string | null, enabled: boolean) {
   });
 }
 
+// Splits the recorded audio into ≤60s WAV chunks client-side and uploads them
+// alongside a JSON meta describing each chunk's timeline. The Worker no longer
+// runs ffmpeg / Workers Containers — it writes the chunks straight to R2 and
+// drives Whisper from the DurableObject (see packages/api/src/processor.ts).
 export function useCreateJob() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
-  return useMutation<JobSummary, Error, { blob: Blob; filename: string }>({
-    mutationFn: async ({ blob, filename }) => {
+  return useMutation<JobSummary, Error, Blob>({
+    mutationFn: async (blob) => {
+      const chunks = await chunkAudioBlob(blob);
+      if (chunks.length === 0) {
+        throw new Error("音声が短すぎてチャンクに分割できませんでした");
+      }
+
       const form = new FormData();
-      form.append("audio", new File([blob], filename, { type: blob.type || "audio/webm" }));
+      form.append(
+        "chunks_meta",
+        JSON.stringify(
+          chunks.map((c) => ({ index: c.index, startSec: c.startSec, endSec: c.endSec })),
+        ),
+      );
+      const totalDuration = chunks[chunks.length - 1].endSec;
+      form.append("duration_sec", String(totalDuration));
+      for (const chunk of chunks) {
+        form.append(
+          `chunk_${chunk.index}`,
+          new File([chunk.blob], `chunk_${chunk.index}.wav`, { type: "audio/wav" }),
+        );
+      }
+
       const res = await fetch(`${API_URL}/api/v1/jobs`, {
         method: "POST",
         headers: authHeaders(token),

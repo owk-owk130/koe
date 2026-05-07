@@ -44,8 +44,7 @@ export function PopoverView() {
     (failed ? (job?.error ?? "ジョブが失敗しました") : null);
 
   const transcribeBlob = async (blob: Blob) => {
-    const filename = `quick-${Date.now()}.webm`;
-    const result = await createJob.mutateAsync({ blob, filename });
+    const result = await createJob.mutateAsync(blob);
     setCurrentJobId(result.id);
   };
 
@@ -54,7 +53,7 @@ export function PopoverView() {
     if (!fileInfo) return;
     const buffer = await window.electronAPI.readFile(fileInfo.path);
     const blob = new Blob([buffer], { type: "audio/mpeg" });
-    const result = await createJob.mutateAsync({ blob, filename: fileInfo.name });
+    const result = await createJob.mutateAsync(blob);
     setCurrentJobId(result.id);
   };
 

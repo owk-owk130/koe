@@ -37,8 +37,7 @@ export function QuickTranscribe() {
         : "処理を準備中...";
 
   const transcribeBlob = async (blob: Blob) => {
-    const filename = `quick-${Date.now()}.webm`;
-    const result = await createJob.mutateAsync({ blob, filename });
+    const result = await createJob.mutateAsync(blob);
     setCurrentJobId(result.id);
   };
 
@@ -47,7 +46,7 @@ export function QuickTranscribe() {
     if (!fileInfo) return;
     const buffer = await window.electronAPI.readFile(fileInfo.path);
     const blob = new Blob([buffer], { type: "audio/mpeg" });
-    const result = await createJob.mutateAsync({ blob, filename: fileInfo.name });
+    const result = await createJob.mutateAsync(blob);
     setCurrentJobId(result.id);
   };
 
