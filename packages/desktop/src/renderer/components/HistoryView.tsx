@@ -272,11 +272,6 @@ function JobDetailView({ jobId, onBack }: { jobId: string; onBack: () => void })
                 {topic.detail && (
                   <p className="mt-2 text-xs leading-relaxed text-text-primary">{topic.detail}</p>
                 )}
-                {topic.transcript && (
-                  <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-text-primary">
-                    {topic.transcript}
-                  </p>
-                )}
               </div>
             ))}
           </div>
