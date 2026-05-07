@@ -1,6 +1,5 @@
-import { Container } from "@cloudflare/containers";
-import type { DurableObject } from "cloudflare:workers";
-import { createChunks } from "./repositories/chunk-repository";
+import { DurableObject } from "cloudflare:workers";
+import { findChunksByJob, updateChunkTranscript } from "./repositories/chunk-repository";
 import {
   claimJobForAnalyze,
   claimJobForTranscribe,
@@ -13,11 +12,12 @@ import {
   markAsTranscribeFailed,
 } from "./repositories/job-repository";
 import { analyzeWithGemini } from "./services/gemini-service";
-import { uploadJSON } from "./services/r2-storage";
+import { deleteByPrefix, uploadJSON } from "./services/r2-storage";
+import { transcribeChunk } from "./services/whisper-service";
 import type { Bindings } from "./types";
 
-// JobPayload travels through DO storage between schedule fires. The phase
-// fields keep retry state isolated so a Gemini failure cannot recharge Whisper.
+// JobPayload travels through DO storage between alarms. The phase fields keep
+// retry state isolated so a Gemini failure cannot recharge Whisper.
 export type JobPayload = {
   jobId: string;
   userId: string;
@@ -31,66 +31,33 @@ export type JobPayload = {
 
 type Segment = { text: string; start_sec: number; end_sec: number };
 
-type TranscribeOutput = {
-  transcript: { text: string; segments: Segment[] };
-  chunks: { index: number; start_sec: number; end_sec: number; text: string }[];
-};
-
 const MAX_RETRIES = 3;
+const DEFAULT_WHISPER_MODEL = "@cf/openai/whisper-large-v3-turbo";
 
-// Wraps the Go audio-processing server (packages/worker). The Container base
-// class handles start/stop, port readiness, and idle sleep — we only implement
-// the job orchestration (claim → transcribe → persist → analyze → complete).
-export class KoeProcessor extends Container<Bindings> {
-  defaultPort = 8080;
-  sleepAfter = "5m"; // stop the container after 5 minutes of inactivity
-
-  constructor(ctx: DurableObject["ctx"], env: Bindings) {
-    super(ctx, env);
-    // Gemini は Workers TS 側から直接叩くようになったので、Container には
-    // Whisper 用の env だけ渡せばよい。
-    this.envVars = {
-      WHISPER_BASE_URL: env.WHISPER_BASE_URL ?? "https://api.openai.com",
-      WHISPER_API_KEY: env.WHISPER_API_KEY,
-      WHISPER_MODEL: env.WHISPER_MODEL ?? "whisper-1",
-    };
-  }
-
-  // The Container base class uses HTTP inflight counters to decide when the
-  // container is idle, but a single long-running audio-processing request can
-  // outlive that tracking and trigger sleepAfter while the pipeline is still
-  // working. As long as we still hold a job in storage, keep the container
-  // alive; otherwise fall back to the default stop behaviour.
-  override async onActivityExpired(): Promise<void> {
-    const job = await this.ctx.storage.get("job");
-    if (job) {
-      this.renewActivityTimeout();
-      return;
-    }
-    await this.stop();
-  }
-
+// Orchestrates audio processing per job: claim → transcribe → persist → analyze
+// → complete. The transcribe phase reads chunks already split client-side
+// (Phase 3) directly from D1 and calls Workers AI Whisper one chunk at a time;
+// the analyze phase calls Gemini from the Worker. There is no longer a Go
+// container in the loop, so we drop the @cloudflare/containers base class and
+// use a plain DurableObject + alarm-based scheduling.
+export class KoeProcessor extends DurableObject<Bindings> {
   override async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/enqueue" && request.method === "POST") {
       const job = await request.json<JobPayload>();
       await this.ctx.storage.put("job", job);
-      // Use `schedule()` instead of setAlarm — the Container base class uses
-      // its own alarm for activity timeout / sleep management, so we must not
-      // override `alarm()` directly.
-      await this.schedule(0, "runJob");
+      await this.ctx.storage.setAlarm(Date.now());
       return new Response("ok");
     }
 
     return new Response("not found", { status: 404 });
   }
 
-  async runJob(): Promise<void> {
+  override async alarm(): Promise<void> {
     const job = await this.ctx.storage.get<JobPayload>("job");
     if (!job) return;
 
-    // Transcribe phase. Skipped when the job is being re-analyzed.
     if (job.startPhase !== "analyze") {
       try {
         const next = await this.runTranscribe(job);
@@ -103,7 +70,6 @@ export class KoeProcessor extends Container<Bindings> {
       }
     }
 
-    // Analyze phase.
     try {
       await this.runAnalyze(job);
     } catch (err) {
@@ -112,6 +78,10 @@ export class KoeProcessor extends Container<Bindings> {
     }
 
     await this.ctx.storage.delete("job");
+  }
+
+  private async scheduleRetry(seconds: number): Promise<void> {
+    await this.ctx.storage.setAlarm(Date.now() + seconds * 1000);
   }
 
   private async runTranscribe(job: JobPayload): Promise<"continue" | "stop"> {
@@ -137,48 +107,63 @@ export class KoeProcessor extends Container<Bindings> {
       );
     }
 
-    const r2Object = await this.env.BUCKET.get(job.audioKey);
-    if (!r2Object) {
-      throw new Error("audio not found in R2");
+    const chunks = await findChunksByJob(this.env.DB, job.jobId);
+    if (chunks.length === 0) {
+      throw new Error("no chunks found for job");
     }
 
-    const response = await this.containerFetch(
-      new Request("http://container/transcribe", {
-        method: "POST",
-        body: r2Object.body,
-        headers: {
-          "Content-Type": r2Object.httpMetadata?.contentType ?? "audio/mpeg",
-        },
-      }),
-    );
+    const whisperOpts = {
+      baseURL: this.env.WHISPER_BASE_URL,
+      apiKey: this.env.WHISPER_API_KEY,
+      model: this.env.WHISPER_MODEL || DEFAULT_WHISPER_MODEL,
+    };
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`container /transcribe error (${response.status}): ${text}`);
+    const allSegments: Segment[] = [];
+    const chunkTexts: string[] = [];
+
+    // Sequential by design — Workers AI has per-account concurrency limits and
+    // running chunks one at a time matches the prior Go pipeline so latency /
+    // back-pressure characteristics don't shift unexpectedly during this
+    // refactor. Revisit if Whisper throughput becomes the bottleneck.
+    for (const chunk of chunks) {
+      // oxlint-disable-next-line no-await-in-loop
+      const r2Object = await this.env.BUCKET.get(chunk.audioKey);
+      if (!r2Object) {
+        throw new Error(`chunk audio not found in R2: ${chunk.audioKey}`);
+      }
+      // oxlint-disable-next-line no-await-in-loop
+      const audio = new Uint8Array(await r2Object.arrayBuffer());
+      // oxlint-disable-next-line no-await-in-loop
+      const result = await transcribeChunk(audio, whisperOpts);
+
+      // Whisper returns chunk-local timestamps; shift onto the global timeline.
+      for (const seg of result.segments) {
+        allSegments.push({
+          text: seg.text,
+          start_sec: seg.start_sec + chunk.startSec,
+          end_sec: seg.end_sec + chunk.startSec,
+        });
+      }
+      chunkTexts.push(result.text);
+      // oxlint-disable-next-line no-await-in-loop
+      await updateChunkTranscript(this.env.DB, chunk.id, result.text);
     }
 
-    const out = await response.json<TranscribeOutput>();
     const transcriptKey = `${job.userId}/results/${job.jobId}/transcript.json`;
-    await uploadJSON(this.env.BUCKET, transcriptKey, out.transcript);
+    await uploadJSON(this.env.BUCKET, transcriptKey, {
+      text: chunkTexts.join("\n"),
+      segments: allSegments,
+    });
 
-    if (out.chunks.length > 0) {
-      await createChunks(
-        this.env.DB,
-        job.jobId,
-        out.chunks.map((c) => ({
-          id: crypto.randomUUID(),
-          chunkIndex: c.index,
-          audioKey: `${job.userId}/audio/${job.jobId}/chunks/${c.index}.mp3`,
-          startSec: c.start_sec,
-          endSec: c.end_sec,
-          transcript: c.text,
-        })),
-      );
-    }
+    // Chunks are only needed during transcribe — once transcript.json is
+    // committed and per-chunk text is in D1, the chunk audio is dead weight.
+    // Delete it before flipping the job to `transcribed` so the R2 footprint
+    // drops to just the original recording + result JSONs.
+    await deleteByPrefix(this.env.BUCKET, `${job.userId}/audio/${job.jobId}/chunks/`);
 
     await markAsTranscribed(this.env.DB, job.jobId, {
       transcriptKey,
-      totalChunks: out.chunks.length,
+      totalChunks: chunks.length,
     });
     return "continue";
   }
@@ -209,8 +194,6 @@ export class KoeProcessor extends Container<Bindings> {
     }
     const transcript = await transcriptObj.json<{ text: string; segments: Segment[] }>();
 
-    // Gemini を Workers TS から直接呼ぶ。Container を起こす必要がないので、
-    // analyze 単独リトライのレイテンシ・課金が大きく減る。
     const out = await analyzeWithGemini(transcript.segments, {
       apiKey: this.env.GEMINI_API_KEY,
       model: this.env.GEMINI_MODEL ?? "gemini-2.0-flash-lite",
@@ -250,10 +233,9 @@ export class KoeProcessor extends Container<Bindings> {
     const attempts = (job.transcribeAttempts ?? 0) + 1;
     if (attempts <= MAX_RETRIES) {
       await this.ctx.storage.put("job", { ...job, transcribeAttempts: attempts });
-      await this.schedule(attempts * 30, "runJob");
+      await this.scheduleRetry(attempts * 30);
       return;
     }
-    // Retries exhausted. Status is already transcribe_failed; drop the job.
     await this.ctx.storage.delete("job");
   }
 
@@ -270,7 +252,7 @@ export class KoeProcessor extends Container<Bindings> {
         analyzeAttempts: attempts,
         startPhase: "analyze",
       });
-      await this.schedule(attempts * 30, "runJob");
+      await this.scheduleRetry(attempts * 30);
       return;
     }
     await this.ctx.storage.delete("job");

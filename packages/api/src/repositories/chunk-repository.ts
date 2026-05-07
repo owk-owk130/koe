@@ -54,3 +54,14 @@ export const findChunksByJob = async (d1: D1Database, jobId: string): Promise<Ch
   const db = getDb(d1);
   return db.select().from(chunks).where(eq(chunks.jobId, jobId)).orderBy(asc(chunks.chunkIndex));
 };
+
+// Writes the per-chunk Whisper text back onto the row after transcription so it
+// stays available for inspection / re-analysis without re-fetching the audio.
+export const updateChunkTranscript = async (
+  d1: D1Database,
+  chunkId: string,
+  transcript: string,
+): Promise<void> => {
+  const db = getDb(d1);
+  await db.update(chunks).set({ transcript }).where(eq(chunks.id, chunkId));
+};

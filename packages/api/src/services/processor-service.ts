@@ -1,4 +1,4 @@
-import type { JobPayload } from "~/container";
+import type { JobPayload } from "~/processor";
 
 export const enqueueJob = async (
   processor: DurableObjectNamespace,

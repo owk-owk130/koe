@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { beforeAll, describe, expect, it } from "vitest";
 import { setupD1 } from "~/test-helpers";
-import { createChunks, findChunksByJob } from "./chunk-repository";
+import { createChunks, findChunksByJob, updateChunkTranscript } from "./chunk-repository";
 
 beforeAll(async () => {
   await setupD1();
@@ -47,6 +47,34 @@ describe("chunk-repository", () => {
   it("returns empty array for job with no chunks", async () => {
     const chunks = await findChunksByJob(env.DB, "nonexistent");
     expect(chunks).toEqual([]);
+  });
+
+  it("updates a chunk's transcript text without touching siblings", async () => {
+    await env.DB.prepare("INSERT INTO jobs (id, user_id, audio_key) VALUES (?, ?, ?)")
+      .bind("job-update", "u1", "u1/audio/job-update/")
+      .run();
+    await createChunks(env.DB, "job-update", [
+      {
+        id: "chunk-update-0",
+        chunkIndex: 0,
+        audioKey: "u1/audio/job-update/chunks/0.wav",
+        startSec: 0,
+        endSec: 60,
+      },
+      {
+        id: "chunk-update-1",
+        chunkIndex: 1,
+        audioKey: "u1/audio/job-update/chunks/1.wav",
+        startSec: 60,
+        endSec: 90,
+      },
+    ]);
+
+    await updateChunkTranscript(env.DB, "chunk-update-0", "first transcript");
+
+    const chunks = await findChunksByJob(env.DB, "job-update");
+    expect(chunks[0].transcript).toBe("first transcript");
+    expect(chunks[1].transcript).toBeNull();
   });
 
   // D1 caps bound parameters at 100 per query. Each row binds 8 columns, so a

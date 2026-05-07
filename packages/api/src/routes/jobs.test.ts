@@ -31,14 +31,69 @@ beforeAll(async () => {
 
 const authHeaders = () => ({ Authorization: `Bearer ${token}` });
 
+interface ChunkSpec {
+  index: number;
+  startSec: number;
+  endSec: number;
+  data?: Uint8Array;
+  skipFile?: boolean;
+}
+
+const buildJobForm = (
+  opts: {
+    chunks?: ChunkSpec[];
+    durationSec?: number;
+    rawMeta?: string;
+    skipMeta?: boolean;
+    skipOriginal?: boolean;
+    originalData?: Uint8Array;
+    originalType?: string;
+    originalFilename?: string;
+  } = {},
+): FormData => {
+  const form = new FormData();
+  const chunks = opts.chunks ?? [{ index: 0, startSec: 0, endSec: 1 }];
+  if (!opts.skipMeta) {
+    const meta =
+      opts.rawMeta ??
+      JSON.stringify(
+        chunks.map((c) => ({ index: c.index, startSec: c.startSec, endSec: c.endSec })),
+      );
+    form.append("chunks_meta", meta);
+  }
+  if (opts.durationSec !== undefined) {
+    form.append("duration_sec", String(opts.durationSec));
+  }
+  if (!opts.skipOriginal) {
+    form.append(
+      "original",
+      new File(
+        [opts.originalData ?? new Uint8Array([9, 9, 9])],
+        opts.originalFilename ?? "original.webm",
+        { type: opts.originalType ?? "audio/webm" },
+      ),
+    );
+  }
+  for (const c of chunks) {
+    if (c.skipFile) continue;
+    form.append(
+      `chunk_${c.index}`,
+      new File([c.data ?? new Uint8Array([1, 2, 3])], `chunk_${c.index}.wav`, {
+        type: "audio/wav",
+      }),
+    );
+  }
+  return form;
+};
+
 describe("POST /api/v1/jobs", () => {
   it("returns 401 without auth", async () => {
     const res = await app.request("/api/v1/jobs", { method: "POST" }, makeEnv());
     expect(res.status).toBe(401);
   });
 
-  it("returns 400 without audio file", async () => {
-    const form = new FormData();
+  it("returns 400 when chunks_meta is missing", async () => {
+    const form = buildJobForm({ skipMeta: true });
     const res = await app.request(
       "/api/v1/jobs",
       { method: "POST", headers: authHeaders(), body: form },
@@ -47,18 +102,149 @@ describe("POST /api/v1/jobs", () => {
     expect(res.status).toBe(400);
   });
 
-  it("creates a job with audio file", async () => {
+  it("returns 400 when chunks_meta is invalid JSON", async () => {
+    const form = buildJobForm({ rawMeta: "{not json" });
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when chunks_meta is empty", async () => {
     const form = new FormData();
-    form.append("audio", new File([new Uint8Array([1, 2, 3])], "test.mp3"));
+    form.append("chunks_meta", "[]");
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when the original audio file is missing", async () => {
+    const form = buildJobForm({ skipOriginal: true });
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when a chunk has endSec <= startSec", async () => {
+    const form = buildJobForm({
+      chunks: [{ index: 0, startSec: 10, endSec: 10 }],
+    });
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when chunk indices are duplicated", async () => {
+    const form = buildJobForm({
+      chunks: [
+        { index: 0, startSec: 0, endSec: 60 },
+        { index: 0, startSec: 60, endSec: 90 },
+      ],
+    });
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when duration_sec is not a finite non-negative number", async () => {
+    const form = buildJobForm({});
+    form.set("duration_sec", "not-a-number");
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+
+    const form2 = buildJobForm({});
+    form2.set("duration_sec", "-5");
+    const res2 = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form2 },
+      makeEnv(),
+    );
+    expect(res2.status).toBe(400);
+  });
+
+  it("returns 400 when a chunk file is missing for the declared index", async () => {
+    const form = buildJobForm({
+      chunks: [
+        { index: 0, startSec: 0, endSec: 60 },
+        { index: 1, startSec: 60, endSec: 90, skipFile: true },
+      ],
+    });
+    const res = await app.request(
+      "/api/v1/jobs",
+      { method: "POST", headers: authHeaders(), body: form },
+      makeEnv(),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("creates a job with chunks and persists original + each chunk to R2 and D1", async () => {
+    const form = buildJobForm({
+      chunks: [
+        { index: 0, startSec: 0, endSec: 60, data: new Uint8Array([1, 2, 3]) },
+        { index: 1, startSec: 60, endSec: 90, data: new Uint8Array([4, 5, 6]) },
+      ],
+      durationSec: 90,
+      originalData: new Uint8Array([7, 8, 9, 10]),
+    });
     const res = await app.request(
       "/api/v1/jobs",
       { method: "POST", headers: authHeaders(), body: form },
       makeEnv(),
     );
     expect(res.status).toBe(201);
-    const body = await res.json<{ id: string; status: string }>();
+    const body = await res.json<{ id: string; status: string; audio_key: string }>();
     expect(body.id).toBeDefined();
     expect(body.status).toBe("pending");
+    expect(body.audio_key).toBe(`jobs-user-1/audio/${body.id}/original.webm`);
+
+    const original = await env.BUCKET.get(body.audio_key);
+    expect(original).not.toBeNull();
+    expect(await original?.arrayBuffer()).toEqual(new Uint8Array([7, 8, 9, 10]).buffer);
+
+    const chunk0 = await env.BUCKET.get(`jobs-user-1/audio/${body.id}/chunks/0.wav`);
+    const chunk1 = await env.BUCKET.get(`jobs-user-1/audio/${body.id}/chunks/1.wav`);
+    expect(chunk0).not.toBeNull();
+    expect(chunk1).not.toBeNull();
+
+    const rows = await env.DB.prepare(
+      "SELECT chunk_index, audio_key, start_sec, end_sec FROM chunks WHERE job_id = ? ORDER BY chunk_index",
+    )
+      .bind(body.id)
+      .all<{ chunk_index: number; audio_key: string; start_sec: number; end_sec: number }>();
+    expect(rows.results).toHaveLength(2);
+    expect(rows.results[0]).toMatchObject({
+      chunk_index: 0,
+      audio_key: `jobs-user-1/audio/${body.id}/chunks/0.wav`,
+      start_sec: 0,
+      end_sec: 60,
+    });
+    expect(rows.results[1].chunk_index).toBe(1);
+
+    const jobRow = await env.DB.prepare(
+      "SELECT total_chunks, audio_duration_sec FROM jobs WHERE id = ?",
+    )
+      .bind(body.id)
+      .first<{ total_chunks: number; audio_duration_sec: number }>();
+    expect(jobRow?.total_chunks).toBe(2);
+    expect(jobRow?.audio_duration_sec).toBe(90);
   });
 });
 
@@ -73,12 +259,9 @@ describe("GET /api/v1/jobs", () => {
 
 describe("GET /api/v1/jobs/:id", () => {
   it("returns job detail", async () => {
-    // Create a job first
-    const form = new FormData();
-    form.append("audio", new File([new Uint8Array([1])], "detail.mp3"));
     const createRes = await app.request(
       "/api/v1/jobs",
-      { method: "POST", headers: authHeaders(), body: form },
+      { method: "POST", headers: authHeaders(), body: buildJobForm() },
       makeEnv(),
     );
     const { id } = await createRes.json<{ id: string }>();
@@ -101,12 +284,9 @@ describe("GET /api/v1/jobs/:id", () => {
 
 describe("GET /api/v1/jobs/:id/topics", () => {
   it("returns topics for a job", async () => {
-    // Create a job
-    const form = new FormData();
-    form.append("audio", new File([new Uint8Array([1])], "topics.mp3"));
     const createRes = await app.request(
       "/api/v1/jobs",
-      { method: "POST", headers: authHeaders(), body: form },
+      { method: "POST", headers: authHeaders(), body: buildJobForm() },
       makeEnv(),
     );
     const { id: jobId } = await createRes.json<{ id: string }>();
@@ -130,6 +310,67 @@ describe("GET /api/v1/jobs/:id/topics", () => {
     const body = await res.json<{ topics: { title: string }[] }>();
     expect(body.topics.length).toBe(1);
     expect(body.topics[0].title).toBe("Topic A");
+  });
+});
+
+describe("GET /api/v1/jobs/:id/audio", () => {
+  const seedJob = async (id: string, audioKey: string, userId = "jobs-user-1") => {
+    await env.DB.prepare("INSERT INTO jobs (id, user_id, status, audio_key) VALUES (?, ?, ?, ?)")
+      .bind(id, userId, "completed", audioKey)
+      .run();
+  };
+
+  it("returns 401 without auth", async () => {
+    await seedJob("au-401", "jobs-user-1/audio/au-401/original.webm");
+    const res = await app.request("/api/v1/jobs/au-401/audio", {}, makeEnv());
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 when the job belongs to another user", async () => {
+    await createUser(env.DB, {
+      id: "jobs-user-other-au",
+      googleId: "g-jobs-other-au",
+      email: "other-au@test.com",
+      name: "Other",
+    });
+    const key = "jobs-user-other-au/audio/au-other/original.webm";
+    await seedJob("au-other", key, "jobs-user-other-au");
+    await env.BUCKET.put(key, new Uint8Array([1, 2, 3]));
+
+    const res = await app.request(
+      "/api/v1/jobs/au-other/audio",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the original is missing in R2", async () => {
+    await seedJob("au-missing", "jobs-user-1/audio/au-missing/original.webm");
+    const res = await app.request(
+      "/api/v1/jobs/au-missing/audio",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("streams the original audio bytes from R2", async () => {
+    const key = "jobs-user-1/audio/au-ok/original.webm";
+    await seedJob("au-ok", key);
+    await env.BUCKET.put(key, new Uint8Array([1, 2, 3, 4, 5]), {
+      httpMetadata: { contentType: "audio/webm" },
+    });
+
+    const res = await app.request(
+      "/api/v1/jobs/au-ok/audio",
+      { headers: authHeaders() },
+      makeEnv(),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("audio/webm");
+    const body = new Uint8Array(await res.arrayBuffer());
+    expect(body).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
   });
 });
 
@@ -233,15 +474,13 @@ describe("DELETE /api/v1/jobs/:id", () => {
   });
 
   it("deletes the job, its topics, and R2 objects", async () => {
-    const form = new FormData();
-    form.append("audio", new File([new Uint8Array([1, 2, 3])], "del.mp3"));
     const createRes = await app.request(
       "/api/v1/jobs",
-      { method: "POST", headers: authHeaders(), body: form },
+      { method: "POST", headers: authHeaders(), body: buildJobForm() },
       makeEnv(),
     );
     const { id: jobId } = await createRes.json<{ id: string }>();
-    const audioKey = `jobs-user-1/audio/${jobId}/original.mp3`;
+    const chunkKey = `jobs-user-1/audio/${jobId}/chunks/0.wav`;
     const resultKey = `jobs-user-1/results/${jobId}/transcript.json`;
 
     // Seed topic + a result JSON so we can verify both prefixes are purged.
@@ -256,7 +495,7 @@ describe("DELETE /api/v1/jobs/:id", () => {
     await env.BUCKET.put(resultKey, JSON.stringify({ text: "t" }));
 
     // Pre-conditions
-    expect(await env.BUCKET.get(audioKey)).not.toBeNull();
+    expect(await env.BUCKET.get(chunkKey)).not.toBeNull();
     expect(await env.BUCKET.get(resultKey)).not.toBeNull();
 
     const res = await app.request(
@@ -275,7 +514,7 @@ describe("DELETE /api/v1/jobs/:id", () => {
     expect(getRes.status).toBe(404);
 
     // R2 objects are gone
-    expect(await env.BUCKET.get(audioKey)).toBeNull();
+    expect(await env.BUCKET.get(chunkKey)).toBeNull();
     expect(await env.BUCKET.get(resultKey)).toBeNull();
   });
 

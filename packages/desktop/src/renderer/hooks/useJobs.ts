@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "~/renderer/lib/api";
+import { chunkAudioBlob } from "~/renderer/lib/audio-chunker";
 import { useAuth } from "./useAuth";
 
 // Phase-aware statuses produced by the two-phase orchestrator. Legacy values
@@ -50,8 +51,8 @@ const authHeaders = (token: string | null): Record<string, string> =>
 
 // Note: we intentionally do not use the hono client for jobs because its typed
 // responses don't cleanly expose a multipart/form-data `POST /api/v1/jobs` — we
-// fall back to raw fetch for that endpoint and keep the rest on plain fetch for
-// consistency.
+// fall back to raw fetch for that endpoint (Desktop sends pre-split chunks +
+// JSON meta), and keep the rest on plain fetch for consistency.
 export function useJobs() {
   const { token } = useAuth();
   return useQuery<{ jobs: JobSummary[] }>({
@@ -137,13 +138,70 @@ export function useJobTranscript(jobId: string | null, enabled: boolean) {
   });
 }
 
+// Splits the recorded audio into ≤60s WAV chunks client-side and uploads them
+// alongside a JSON meta describing each chunk's timeline plus the original
+// recording (preserved as-is for later playback). The Worker writes chunks
+// straight to R2 and drives Whisper from the DurableObject (see
+// packages/api/src/processor.ts); chunks are deleted server-side once the
+// transcript is committed, leaving only the original behind.
+// Fetches the original recording from the API. We cache the Blob (not an
+// object URL) because consumers create their own URL via URL.createObjectURL
+// and revoke it on unmount; caching a URL would let revoked URLs leak across
+// remounts within gcTime, breaking playback when the same job is reopened.
+// Lazy: only runs when `enabled` flips true so we don't pull MB-sized
+// recordings for jobs the user never plays.
+export function useJobAudio(jobId: string | null, enabled: boolean) {
+  const { token } = useAuth();
+  return useQuery<Blob>({
+    queryKey: [...JOBS_KEY, "audio", jobId],
+    queryFn: async () => {
+      const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}/audio`, {
+        headers: authHeaders(token),
+      });
+      if (!res.ok) throw new Error(`Failed to fetch audio: ${res.status}`);
+      return res.blob();
+    },
+    enabled: !!jobId && !!token && enabled,
+    staleTime: Infinity,
+    gcTime: 5 * 60 * 1000,
+  });
+}
+
 export function useCreateJob() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
-  return useMutation<JobSummary, Error, { blob: Blob; filename: string }>({
-    mutationFn: async ({ blob, filename }) => {
+  return useMutation<JobSummary, Error, Blob>({
+    mutationFn: async (blob) => {
+      const chunks = await chunkAudioBlob(blob);
+      if (chunks.length === 0) {
+        throw new Error("音声が短すぎてチャンクに分割できませんでした");
+      }
+
       const form = new FormData();
-      form.append("audio", new File([blob], filename, { type: blob.type || "audio/webm" }));
+      form.append(
+        "chunks_meta",
+        JSON.stringify(
+          chunks.map((c) => ({ index: c.index, startSec: c.startSec, endSec: c.endSec })),
+        ),
+      );
+      const totalDuration = chunks[chunks.length - 1].endSec;
+      form.append("duration_sec", String(totalDuration));
+
+      const originalExt = mimeToExt(blob.type);
+      form.append(
+        "original",
+        new File([blob], `original.${originalExt}`, {
+          type: blob.type || "application/octet-stream",
+        }),
+      );
+
+      for (const chunk of chunks) {
+        form.append(
+          `chunk_${chunk.index}`,
+          new File([chunk.blob], `chunk_${chunk.index}.wav`, { type: "audio/wav" }),
+        );
+      }
+
       const res = await fetch(`${API_URL}/api/v1/jobs`, {
         method: "POST",
         headers: authHeaders(token),
@@ -160,6 +218,29 @@ export function useCreateJob() {
     },
   });
 }
+
+// Recording produces audio/webm via MediaRecorder; file picks come in as the
+// platform-default MIME (audio/mpeg etc). The server uses the same mapping
+// to choose the stored extension, so we keep both sides in sync here.
+const mimeToExt = (mime: string): string => {
+  const m = mime.split(";")[0]?.trim().toLowerCase();
+  switch (m) {
+    case "audio/webm":
+      return "webm";
+    case "audio/mpeg":
+      return "mp3";
+    case "audio/mp4":
+    case "audio/m4a":
+      return "m4a";
+    case "audio/wav":
+    case "audio/x-wav":
+      return "wav";
+    case "audio/ogg":
+      return "ogg";
+    default:
+      return "webm";
+  }
+};
 
 // Re-runs the analyze phase for a job whose transcript has already been
 // persisted. Only valid when the job is in `transcribed` or `analyze_failed`;
