@@ -3,6 +3,7 @@ import { formatDuration } from "@koe/shared";
 import { Mic, Square, RotateCcw, Upload, AppWindow } from "lucide-react";
 import { useCreateJob, useJob, useJobTopics } from "~/renderer/hooks/useJobs";
 import { useRecording, type AudioSourceMode } from "~/renderer/hooks/useRecording";
+import { mimeFromFilename } from "~/renderer/lib/audio-mime";
 
 export function PopoverView() {
   const createJob = useCreateJob();
@@ -52,7 +53,7 @@ export function PopoverView() {
     const fileInfo = await window.electronAPI.selectAudioFile();
     if (!fileInfo) return;
     const buffer = await window.electronAPI.readFile(fileInfo.path);
-    const blob = new Blob([buffer], { type: "audio/mpeg" });
+    const blob = new Blob([buffer], { type: mimeFromFilename(fileInfo.name) });
     const result = await createJob.mutateAsync(blob);
     setCurrentJobId(result.id);
   };

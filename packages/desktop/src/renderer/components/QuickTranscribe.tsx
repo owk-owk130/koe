@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { JobResultPanel } from "./JobResultPanel";
 import { RecordingPanel } from "./RecordingPanel";
 import { useCreateJob } from "~/renderer/hooks/useJobs";
+import { mimeFromFilename } from "~/renderer/lib/audio-mime";
 
 export function QuickTranscribe() {
   const createJob = useCreateJob();
@@ -22,7 +23,7 @@ export function QuickTranscribe() {
     const fileInfo = await window.electronAPI.selectAudioFile();
     if (!fileInfo) return;
     const buffer = await window.electronAPI.readFile(fileInfo.path);
-    const blob = new Blob([buffer], { type: "audio/mpeg" });
+    const blob = new Blob([buffer], { type: mimeFromFilename(fileInfo.name) });
     const result = await createJob.mutateAsync(blob);
     setCurrentJobId(result.id);
   };
