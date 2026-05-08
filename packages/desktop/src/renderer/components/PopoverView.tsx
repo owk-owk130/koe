@@ -23,20 +23,14 @@ export function PopoverView() {
 
   const uploading = createJob.isPending;
   const processing =
-    job?.status === "pending" ||
-    job?.status === "processing" ||
-    job?.status === "transcribing" ||
-    job?.status === "analyzing";
-  const failed =
-    job?.status === "failed" ||
-    job?.status === "transcribe_failed" ||
-    job?.status === "analyze_failed";
+    job?.status === "pending" || job?.status === "transcribing" || job?.status === "analyzing";
+  const failed = job?.status === "transcribe_failed" || job?.status === "analyze_failed";
   const loading = uploading || processing;
   const progressLabel = uploading
     ? "アップロード中..."
     : job?.status === "analyzing"
       ? "要約中..."
-      : job?.status === "transcribing" || job?.status === "processing"
+      : job?.status === "transcribing"
         ? "文字起こし中..."
         : "処理を準備中...";
   const mutationError =

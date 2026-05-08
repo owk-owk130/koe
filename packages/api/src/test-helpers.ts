@@ -34,7 +34,6 @@ const migrations = [
         start_sec REAL NOT NULL,
         end_sec REAL NOT NULL,
         transcript TEXT,
-        transcript_key TEXT,
         error TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`,
@@ -48,7 +47,6 @@ const migrations = [
         start_sec REAL,
         end_sec REAL,
         transcript TEXT NOT NULL,
-        transcript_key TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`,
       `CREATE INDEX idx_jobs_user ON jobs(user_id, created_at)`,
