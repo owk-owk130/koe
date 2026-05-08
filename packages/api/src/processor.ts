@@ -18,6 +18,10 @@ import type { Bindings } from "./types";
 
 // JobPayload travels through DO storage between alarms. The phase fields keep
 // retry state isolated so a Gemini failure cannot recharge Whisper.
+//
+// BYOK fields (gemini*/whisper*) are snapshotted from the originating request
+// headers when the job is enqueued and travel through DO storage so retries on
+// a later alarm reuse the same keys even if the user has changed them since.
 export type JobPayload = {
   jobId: string;
   userId: string;
@@ -27,12 +31,50 @@ export type JobPayload = {
   // When set to "analyze" the orchestrator skips the transcribe phase. This is
   // how POST /api/v1/jobs/:id/analyze re-runs only the LLM step.
   startPhase?: "transcribe" | "analyze";
+  geminiApiKey?: string;
+  geminiModel?: string;
+  whisperApiKey?: string;
+  whisperAccountId?: string;
 };
 
 type Segment = { text: string; start_sec: number; end_sec: number };
 
 const MAX_RETRIES = 3;
 const DEFAULT_WHISPER_MODEL = "@cf/openai/whisper-large-v3-turbo";
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
+
+// Whisper BYOK requires both a user-provided CF API token AND the user's
+// account id (REST URL embeds the account id). If only one is supplied we
+// can't construct a working request, so fall back to env entirely rather than
+// half-applying the override.
+export const resolveWhisperOpts = (
+  env: Bindings,
+  job: JobPayload,
+): { baseURL: string; apiKey: string; model: string } => {
+  const model = env.WHISPER_MODEL || DEFAULT_WHISPER_MODEL;
+  if (job.whisperApiKey && job.whisperAccountId) {
+    return {
+      baseURL: `https://api.cloudflare.com/client/v4/accounts/${job.whisperAccountId}/ai`,
+      apiKey: job.whisperApiKey,
+      model,
+    };
+  }
+  return {
+    baseURL: env.WHISPER_BASE_URL,
+    apiKey: env.WHISPER_API_KEY,
+    model,
+  };
+};
+
+export const resolveGeminiOpts = (
+  env: Bindings,
+  job: JobPayload,
+): { apiKey: string; model: string } => ({
+  apiKey: job.geminiApiKey ?? env.GEMINI_API_KEY,
+  // env.GEMINI_MODEL can be empty string in some test/dev configs; treat empty
+  // the same as unset so we always have a real model name.
+  model: job.geminiModel || env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL,
+});
 
 // Orchestrates audio processing per job: claim → transcribe → persist → analyze
 // → complete. The transcribe phase reads chunks already split client-side
@@ -112,11 +154,7 @@ export class KoeProcessor extends DurableObject<Bindings> {
       throw new Error("no chunks found for job");
     }
 
-    const whisperOpts = {
-      baseURL: this.env.WHISPER_BASE_URL,
-      apiKey: this.env.WHISPER_API_KEY,
-      model: this.env.WHISPER_MODEL || DEFAULT_WHISPER_MODEL,
-    };
+    const whisperOpts = resolveWhisperOpts(this.env, job);
 
     const allSegments: Segment[] = [];
     const chunkTexts: string[] = [];
@@ -194,10 +232,7 @@ export class KoeProcessor extends DurableObject<Bindings> {
     }
     const transcript = await transcriptObj.json<{ text: string; segments: Segment[] }>();
 
-    const out = await analyzeWithGemini(transcript.segments, {
-      apiKey: this.env.GEMINI_API_KEY,
-      model: this.env.GEMINI_MODEL ?? "gemini-2.0-flash-lite",
-    });
+    const out = await analyzeWithGemini(transcript.segments, resolveGeminiOpts(this.env, job));
 
     await uploadJSON(this.env.BUCKET, `${job.userId}/results/${job.jobId}/topics.json`, out.topics);
 
