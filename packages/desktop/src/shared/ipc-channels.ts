@@ -46,7 +46,9 @@ export const IPC = {
 // ---- Payload types ----
 
 // BYOK secrets stored locally via Electron `safeStorage`. Sent as request
-// headers to the API per-job; never persisted server-side.
+// headers to the API per-job; the server keeps them in DurableObject storage
+// only for the lifetime of the job (deleted on completion or after exhausting
+// retries) and does not persist them long-term.
 export interface AiSecrets {
   geminiApiKey?: string;
   geminiModel?: string;

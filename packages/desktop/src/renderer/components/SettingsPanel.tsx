@@ -60,14 +60,22 @@ export function SettingsPanel() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
-    Promise.all([
+    // allSettled so a secrets IPC failure doesn't leave the permissions UI
+    // unset (and vice versa). Each call is independent.
+    Promise.allSettled([
       window.electronAPI.checkPermissions(),
       window.electronAPI.getSecretsStatus(),
-    ]).then(([perms, status]) => {
-      setPermissions(perms);
-      setSecretsStatus(status);
+    ]).then(([permsResult, statusResult]) => {
+      if (permsResult.status === "fulfilled") setPermissions(permsResult.value);
+      if (statusResult.status === "fulfilled") setSecretsStatus(statusResult.value);
     });
   }, []);
+
+  useEffect(() => {
+    if (savedAt === null) return;
+    const t = setTimeout(() => setSavedAt(null), 3000);
+    return () => clearTimeout(t);
+  }, [savedAt]);
 
   const requestMic = async () => {
     const granted = await window.electronAPI.requestMicPermission();
@@ -117,7 +125,7 @@ export function SettingsPanel() {
     setSavedAt(null);
   }, []);
 
-  const savedRecently = savedAt !== null && Date.now() - savedAt < 3000;
+  const savedRecently = savedAt !== null;
 
   // Saved-state inputs share a "再入力で上書き" placeholder so the UI doesn't
   // hint at the actual stored value (which we never read back into the

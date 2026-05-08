@@ -39,29 +39,26 @@ type SecretField = keyof NonNullable<SecretsStore["secrets"]>;
 
 const SECRET_FIELDS: SecretField[] = ["geminiApiKey", "geminiModel", "cfApiToken", "cfAccountId"];
 
+// Refuse to persist without OS-backed encryption: a hardcoded electron-store
+// key is materially weaker than safeStorage and would silently break the
+// "OS keychain" guarantee the UI / docs make. Surfaces as an IPC rejection
+// the renderer can show.
 const encryptSecret = (value: string): string => {
   if (!safeStorage.isEncryptionAvailable()) {
-    // Fall back to plain text inside the electron-store-encrypted file. The
-    // store-level encryption is symmetric with a hardcoded key, so this is
-    // weaker than safeStorage — but losing safeStorage is rare on macOS prod
-    // builds and we'd rather store the secret than refuse to.
-    return `plain:${value}`;
+    throw new Error(
+      "safeStorage is unavailable; refusing to persist BYOK secrets without OS-backed encryption",
+    );
   }
-  return `enc:${safeStorage.encryptString(value).toString("base64")}`;
+  return safeStorage.encryptString(value).toString("base64");
 };
 
 const decryptSecret = (stored: string): string | undefined => {
-  if (stored.startsWith("plain:")) return stored.slice("plain:".length);
-  if (stored.startsWith("enc:")) {
-    if (!safeStorage.isEncryptionAvailable()) return undefined;
-    try {
-      return safeStorage.decryptString(Buffer.from(stored.slice("enc:".length), "base64"));
-    } catch {
-      return undefined;
-    }
+  if (!safeStorage.isEncryptionAvailable()) return undefined;
+  try {
+    return safeStorage.decryptString(Buffer.from(stored, "base64"));
+  } catch {
+    return undefined;
   }
-  // Legacy / unknown prefix: treat as missing.
-  return undefined;
 };
 
 const readSecrets = (): AiSecrets => {
@@ -78,13 +75,20 @@ const readSecrets = (): AiSecrets => {
   return out;
 };
 
+// Status reflects *usable* secrets, not just "something is on disk". A
+// stored value that no longer decrypts (e.g., safeStorage became unavailable)
+// is reported as unset so the UI matches what readSecrets() will actually
+// return when building request headers.
+const isUsableSecret = (stored: unknown): boolean =>
+  typeof stored === "string" && stored.length > 0 && decryptSecret(stored) !== undefined;
+
 const readSecretsStatus = (): AiSecretsStatus => {
   const raw = store.get("secrets") ?? {};
   return {
-    geminiApiKey: typeof raw.geminiApiKey === "string" && raw.geminiApiKey.length > 0,
-    geminiModel: typeof raw.geminiModel === "string" && raw.geminiModel.length > 0,
-    cfApiToken: typeof raw.cfApiToken === "string" && raw.cfApiToken.length > 0,
-    cfAccountId: typeof raw.cfAccountId === "string" && raw.cfAccountId.length > 0,
+    geminiApiKey: isUsableSecret(raw.geminiApiKey),
+    geminiModel: isUsableSecret(raw.geminiModel),
+    cfApiToken: isUsableSecret(raw.cfApiToken),
+    cfAccountId: isUsableSecret(raw.cfAccountId),
   };
 };
 
