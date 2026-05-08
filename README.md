@@ -112,9 +112,17 @@ pnpm deploy:api
 | `WHISPER_API_KEY`      | secret | Cloudflare API token (Workers AI 権限)                                         |
 | `WHISPER_MODEL`        | vars   | モデル名 (推奨: `@cf/openai/whisper-large-v3-turbo`)                           |
 | `GEMINI_API_KEY`       | secret | Gemini API key                                                                 |
-| `GEMINI_MODEL`         | vars   | Gemini model name (default: `gemini-2.0-flash-lite`)                           |
+| `GEMINI_MODEL`         | vars   | Gemini model name (default: `gemini-2.5-flash`)                                |
 
 Workers secrets は `wrangler secret put` で設定。ローカル開発は `packages/api/.dev.vars` を使用。
+
+#### BYOK (個別ユーザーが自分のキーで動かす)
+
+Desktop アプリの「設定 → API キー」で Gemini / Cloudflare の認証情報を入力すると、ジョブ作成時に
+リクエストヘッダ経由でサーバ側 env 既定値を上書きできる。未入力なら従来通り env が使われる。
+入力した値は OS keychain (Electron `safeStorage`) にローカル保存される。サーバ側はジョブ処理中のみ
+DurableObject storage に保持し（CF の at-rest 暗号化下）、ジョブ完了 / 全リトライ失敗時に破棄する
+（長期保管しない）。
 
 ## License
 

@@ -14,6 +14,7 @@ import {
 import { enqueueJob } from "~/services/processor-service";
 import { deleteByPrefix, downloadJSON, uploadAudio } from "~/services/r2-storage";
 import type { Env } from "~/types";
+import { extractAiKeysFromHeaders } from "./jobs-helpers";
 
 // Desktop side splits audio into ≤60s chunks before upload (see
 // packages/desktop/src/renderer/lib/audio-chunker.ts), so the API receives
@@ -147,6 +148,8 @@ const jobs = new Hono<Env>()
     });
     await createChunks(c.env.DB, jobId, chunkInputs);
 
+    const aiKeys = extractAiKeysFromHeaders(c.req.raw.headers);
+
     try {
       if (c.env.PROCESSOR) {
         c.executionCtx.waitUntil(
@@ -154,6 +157,7 @@ const jobs = new Hono<Env>()
             jobId: job.id,
             userId: user.id,
             audioKey,
+            ...aiKeys,
           }),
         );
       }
@@ -338,6 +342,8 @@ const jobs = new Hono<Env>()
       );
     }
 
+    const aiKeys = extractAiKeysFromHeaders(c.req.raw.headers);
+
     try {
       if (c.env.PROCESSOR) {
         c.executionCtx.waitUntil(
@@ -346,6 +352,7 @@ const jobs = new Hono<Env>()
             userId: user.id,
             audioKey: job.audioKey,
             startPhase: "analyze",
+            ...aiKeys,
           }),
         );
       }

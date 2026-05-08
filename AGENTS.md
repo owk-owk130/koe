@@ -67,7 +67,7 @@ GET  /auth/device              # Device Flow 開始
 POST /auth/token               # トークン交換
 
 # MCP（Streamable HTTP、認証必須）
-ALL  /mcp                      # Claude Desktop / モバイル向けリモート MCP
+ALL  /mcp                      # Codex Desktop / モバイル向けリモート MCP
 ```
 
 ### MCP ツール

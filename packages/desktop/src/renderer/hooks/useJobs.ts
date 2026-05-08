@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { API_URL } from "~/renderer/lib/api";
 import { chunkAudioBlob } from "~/renderer/lib/audio-chunker";
+import { fetchSecretHeaders } from "~/renderer/lib/secret-headers";
 import { useAuth } from "./useAuth";
 
 // Phase-aware statuses produced by the two-phase orchestrator.
@@ -195,9 +196,10 @@ export function useCreateJob() {
         );
       }
 
+      const secretHeaders = await fetchSecretHeaders();
       const res = await fetch(`${API_URL}/api/v1/jobs`, {
         method: "POST",
-        headers: authHeaders(token),
+        headers: { ...authHeaders(token), ...secretHeaders },
         body: form,
       });
       if (!res.ok) {
@@ -243,9 +245,10 @@ export function useReanalyzeJob() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, string>({
     mutationFn: async (jobId) => {
+      const secretHeaders = await fetchSecretHeaders();
       const res = await fetch(`${API_URL}/api/v1/jobs/${jobId}/analyze`, {
         method: "POST",
-        headers: authHeaders(token),
+        headers: { ...authHeaders(token), ...secretHeaders },
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
