@@ -4,6 +4,7 @@ import {
   desktopCapturer,
   dialog,
   ipcMain,
+  safeStorage,
   shell,
   systemPreferences,
 } from "electron";
@@ -14,10 +15,93 @@ import { is } from "@electron-toolkit/utils";
 import Store from "electron-store";
 import { isTokenExpired, parseUser } from "@koe/shared";
 import { IPC } from "~/shared/ipc-channels";
+import type { AiSecrets, AiSecretsStatus } from "~/shared/ipc-channels";
 import { createTray, updateTrayState } from "./tray";
 import { createPopoverWindow, togglePopover, getPopoverWindow } from "./popover";
 
-const store = new Store<{ token?: string }>({ encryptionKey: "koe-desktop" });
+// Secrets are persisted as base64-encoded ciphertext from `safeStorage` so the
+// raw key bytes never sit in the on-disk JSON. `safeStorage.encryptString` is
+// backed by the OS keychain (Keychain on macOS, DPAPI on Windows, libsecret on
+// Linux) — losing the OS profile is the only way to recover the raw value.
+type SecretsStore = {
+  token?: string;
+  secrets?: {
+    geminiApiKey?: string;
+    geminiModel?: string;
+    cfApiToken?: string;
+    cfAccountId?: string;
+  };
+};
+
+const store = new Store<SecretsStore>({ encryptionKey: "koe-desktop" });
+
+type SecretField = keyof NonNullable<SecretsStore["secrets"]>;
+
+const SECRET_FIELDS: SecretField[] = ["geminiApiKey", "geminiModel", "cfApiToken", "cfAccountId"];
+
+const encryptSecret = (value: string): string => {
+  if (!safeStorage.isEncryptionAvailable()) {
+    // Fall back to plain text inside the electron-store-encrypted file. The
+    // store-level encryption is symmetric with a hardcoded key, so this is
+    // weaker than safeStorage — but losing safeStorage is rare on macOS prod
+    // builds and we'd rather store the secret than refuse to.
+    return `plain:${value}`;
+  }
+  return `enc:${safeStorage.encryptString(value).toString("base64")}`;
+};
+
+const decryptSecret = (stored: string): string | undefined => {
+  if (stored.startsWith("plain:")) return stored.slice("plain:".length);
+  if (stored.startsWith("enc:")) {
+    if (!safeStorage.isEncryptionAvailable()) return undefined;
+    try {
+      return safeStorage.decryptString(Buffer.from(stored.slice("enc:".length), "base64"));
+    } catch {
+      return undefined;
+    }
+  }
+  // Legacy / unknown prefix: treat as missing.
+  return undefined;
+};
+
+const readSecrets = (): AiSecrets => {
+  const raw = store.get("secrets") ?? {};
+  const out: AiSecrets = {};
+  for (const field of SECRET_FIELDS) {
+    const stored = raw[field];
+    if (typeof stored !== "string" || stored.length === 0) continue;
+    const decoded = decryptSecret(stored);
+    if (decoded !== undefined && decoded.length > 0) {
+      out[field] = decoded;
+    }
+  }
+  return out;
+};
+
+const readSecretsStatus = (): AiSecretsStatus => {
+  const raw = store.get("secrets") ?? {};
+  return {
+    geminiApiKey: typeof raw.geminiApiKey === "string" && raw.geminiApiKey.length > 0,
+    geminiModel: typeof raw.geminiModel === "string" && raw.geminiModel.length > 0,
+    cfApiToken: typeof raw.cfApiToken === "string" && raw.cfApiToken.length > 0,
+    cfAccountId: typeof raw.cfAccountId === "string" && raw.cfAccountId.length > 0,
+  };
+};
+
+const writeSecrets = (patch: AiSecrets): void => {
+  const current = store.get("secrets") ?? {};
+  const next: SecretsStore["secrets"] = { ...current };
+  for (const field of SECRET_FIELDS) {
+    if (!(field in patch)) continue;
+    const value = patch[field];
+    if (value === undefined || value === null || value === "") {
+      delete next[field];
+    } else {
+      next[field] = encryptSecret(value);
+    }
+  }
+  store.set("secrets", next);
+};
 
 let mainWindow: BrowserWindow | null = null;
 let isQuitting = false;
@@ -70,6 +154,20 @@ ipcMain.handle(IPC.AUTH_GET_USER, () => {
   const token = store.get("token");
   if (!token || isTokenExpired(token)) return null;
   return parseUser(token);
+});
+
+// ---- Secrets IPC ----
+
+ipcMain.handle(IPC.SECRETS_GET, () => readSecrets());
+
+ipcMain.handle(IPC.SECRETS_GET_STATUS, () => readSecretsStatus());
+
+ipcMain.handle(IPC.SECRETS_SET, (_, patch: AiSecrets) => {
+  writeSecrets(patch);
+});
+
+ipcMain.handle(IPC.SECRETS_CLEAR, () => {
+  store.delete("secrets");
 });
 
 // ---- Audio IPC ----

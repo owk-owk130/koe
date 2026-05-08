@@ -9,6 +9,12 @@ const electronAPI: ElectronAPI = {
   clearToken: () => ipcRenderer.invoke(IPC.AUTH_CLEAR_TOKEN),
   getUser: () => ipcRenderer.invoke(IPC.AUTH_GET_USER),
 
+  // BYOK secrets
+  getSecrets: () => ipcRenderer.invoke(IPC.SECRETS_GET),
+  getSecretsStatus: () => ipcRenderer.invoke(IPC.SECRETS_GET_STATUS),
+  setSecrets: (patch) => ipcRenderer.invoke(IPC.SECRETS_SET, patch),
+  clearSecrets: () => ipcRenderer.invoke(IPC.SECRETS_CLEAR),
+
   // Recording
   notifyRecordingState: (state) => ipcRenderer.invoke(IPC.RECORDING_STATE_CHANGED, state),
   saveRecording: (buffer, filename) => ipcRenderer.invoke(IPC.RECORDING_SAVE, buffer, filename),

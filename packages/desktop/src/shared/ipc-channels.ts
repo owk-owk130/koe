@@ -9,6 +9,12 @@ export const IPC = {
   AUTH_CLEAR_TOKEN: "auth:clear-token",
   AUTH_GET_USER: "auth:get-user",
 
+  // BYOK secrets (Gemini / Whisper)
+  SECRETS_GET: "secrets:get",
+  SECRETS_GET_STATUS: "secrets:get-status",
+  SECRETS_SET: "secrets:set",
+  SECRETS_CLEAR: "secrets:clear",
+
   // Recording
   RECORDING_STATE_CHANGED: "recording:state-changed",
   RECORDING_SAVE: "recording:save",
@@ -39,6 +45,24 @@ export const IPC = {
 
 // ---- Payload types ----
 
+// BYOK secrets stored locally via Electron `safeStorage`. Sent as request
+// headers to the API per-job; never persisted server-side.
+export interface AiSecrets {
+  geminiApiKey?: string;
+  geminiModel?: string;
+  cfApiToken?: string;
+  cfAccountId?: string;
+}
+
+// Whether each secret is currently saved. Used by the Settings UI to display
+// "saved / not saved" without leaking the value back to the renderer.
+export interface AiSecretsStatus {
+  geminiApiKey: boolean;
+  geminiModel: boolean;
+  cfApiToken: boolean;
+  cfAccountId: boolean;
+}
+
 export type RecordingState = "idle" | "recording" | "paused" | "processing";
 
 export interface DesktopSource {
@@ -66,6 +90,12 @@ export interface ElectronAPI {
   saveToken: (token: string) => Promise<void>;
   clearToken: () => Promise<void>;
   getUser: () => Promise<AuthUser | null>;
+
+  // BYOK secrets
+  getSecrets: () => Promise<AiSecrets>;
+  getSecretsStatus: () => Promise<AiSecretsStatus>;
+  setSecrets: (patch: AiSecrets) => Promise<void>;
+  clearSecrets: () => Promise<void>;
 
   // Recording
   notifyRecordingState: (state: RecordingState) => Promise<void>;
