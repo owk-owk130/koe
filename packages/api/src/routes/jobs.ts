@@ -295,9 +295,7 @@ const jobs = new Hono<Env>()
     }
 
     if (!job.transcriptKey) {
-      // Job hasn't reached the transcribed state yet (still pending /
-      // transcribing, or it was a legacy single-phase job that never
-      // recorded a transcript_key).
+      // Job hasn't reached the transcribed state yet (still pending or transcribing).
       throw new AppError(404, "NOT_FOUND", "Transcript not available for this job yet");
     }
 

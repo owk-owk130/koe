@@ -96,12 +96,9 @@ export function JobResultPanel({ jobId, onDeleted }: { jobId: string; onDeleted:
         />
       )}
 
-      {(job.status === "failed" ||
-        job.status === "transcribe_failed" ||
-        job.status === "analyze_failed") &&
-        job.error && (
-          <p className="rounded-[8px] bg-error/10 p-3 text-xs text-error">{job.error}</p>
-        )}
+      {(job.status === "transcribe_failed" || job.status === "analyze_failed") && job.error && (
+        <p className="rounded-[8px] bg-error/10 p-3 text-xs text-error">{job.error}</p>
+      )}
 
       {(job.status === "analyze_failed" || job.status === "completed") && (
         <div className="flex flex-col gap-3 rounded-[10px] border border-[rgba(0,0,0,0.03)] bg-white p-4">

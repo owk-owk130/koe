@@ -8,9 +8,6 @@ const STATUS_COLORS: Record<string, string> = {
   completed: "bg-[#dcfce7] text-[#166534]",
   transcribe_failed: "bg-[#fee2e2] text-error",
   analyze_failed: "bg-[#fee2e2] text-error",
-  // legacy single-phase values kept for older rows.
-  processing: "bg-brand-light text-brand",
-  failed: "bg-[#fee2e2] text-error",
 };
 
 export function StatusBadge({ status }: { status: string }) {

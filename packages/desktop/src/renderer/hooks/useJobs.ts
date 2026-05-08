@@ -3,9 +3,7 @@ import { API_URL } from "~/renderer/lib/api";
 import { chunkAudioBlob } from "~/renderer/lib/audio-chunker";
 import { useAuth } from "./useAuth";
 
-// Phase-aware statuses produced by the two-phase orchestrator. Legacy values
-// ("processing", "failed") are kept so rows created before the split still
-// render correctly.
+// Phase-aware statuses produced by the two-phase orchestrator.
 export type JobStatus =
   | "pending"
   | "transcribing"
@@ -13,9 +11,7 @@ export type JobStatus =
   | "analyzing"
   | "completed"
   | "transcribe_failed"
-  | "analyze_failed"
-  | "processing"
-  | "failed";
+  | "analyze_failed";
 
 export interface JobSummary {
   id: string;
@@ -72,8 +68,6 @@ const IN_PROGRESS_STATUSES: ReadonlySet<JobStatus> = new Set([
   "pending",
   "transcribing",
   "analyzing",
-  // legacy
-  "processing",
 ]);
 
 // Polls non-terminal jobs every 3 seconds until they finish or fail.
@@ -131,9 +125,8 @@ export function useJobTranscript(jobId: string | null, enabled: boolean) {
       return res.json();
     },
     enabled: !!jobId && !!token && enabled,
-    // Legacy jobs that completed before the two-phase split keep transcript_key
-    // null and the API legitimately returns 404 for them. Skip the React Query
-    // default retry so opening such jobs doesn't hammer the endpoint.
+    // Jobs that haven't reached the transcribed phase legitimately return 404.
+    // Skip React Query's default retry so opening such jobs doesn't hammer the endpoint.
     retry: false,
   });
 }

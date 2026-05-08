@@ -181,14 +181,13 @@ export type TopicInput = {
   startSec?: number;
   endSec?: number;
   transcript: string;
-  transcriptKey?: string;
 };
 
 // D1 caps bound parameters at 100 per query (see
 // https://developers.cloudflare.com/d1/platform/limits/). Each row in the
-// topics insert binds 10 columns, so we cap a single-statement insert at 9
-// rows (9 * 10 = 90) and let the caller pass arbitrary lengths.
-const TOPICS_INSERT_BATCH_SIZE = 9;
+// topics insert binds 9 columns, so we cap a single-statement insert at 11
+// rows (11 * 9 = 99) and let the caller pass arbitrary lengths.
+const TOPICS_INSERT_BATCH_SIZE = 11;
 
 export const createTopics = async (
   d1: D1Database,
@@ -216,35 +215,10 @@ export const createTopics = async (
           startSec: t.startSec ?? null,
           endSec: t.endSec ?? null,
           transcript: t.transcript,
-          transcriptKey: t.transcriptKey ?? null,
         })),
       ),
     ),
   );
-};
-
-export const createCompletedJob = async (
-  d1: D1Database,
-  input: {
-    id: string;
-    userId: string;
-    audioFilename: string;
-    summary: string | null;
-  },
-): Promise<Job> => {
-  const db = getDb(d1);
-  const audioKey = `${input.userId}/audio/${input.id}/local-${input.audioFilename}`;
-  const [row] = await db
-    .insert(jobs)
-    .values({
-      id: input.id,
-      userId: input.userId,
-      audioKey,
-      status: "completed",
-      summary: input.summary,
-    })
-    .returning();
-  return row;
 };
 
 export const findTopicsByJob = async (d1: D1Database, jobId: string): Promise<Topic[]> => {
@@ -304,7 +278,6 @@ export const searchTopicsByUser = async (
       startSec: topics.startSec,
       endSec: topics.endSec,
       transcript: topics.transcript,
-      transcriptKey: topics.transcriptKey,
       createdAt: topics.createdAt,
     })
     .from(topics)

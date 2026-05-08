@@ -33,10 +33,6 @@ const STATUS_LABELS: Record<string, string> = {
   completed: "完了",
   transcribe_failed: "文字起こし失敗",
   analyze_failed: "要約失敗",
-  // legacy values from the single-phase orchestrator are kept so existing rows
-  // still render correctly.
-  processing: "処理中",
-  failed: "失敗",
 };
 
 export function statusLabel(status: string): string {

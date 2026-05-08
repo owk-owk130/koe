@@ -4,7 +4,6 @@ import { onError } from "./lib/errors";
 import authRoutes from "./routes/auth";
 import jobsRoutes from "./routes/jobs";
 import mcpRoutes from "./routes/mcp";
-import syncRoutes from "./routes/sync";
 import uploadsRoutes from "./routes/uploads";
 import type { Env } from "./types";
 
@@ -14,7 +13,6 @@ const app = new Hono<Env>()
   .route("/auth", authRoutes)
   .route("/api/v1/jobs", jobsRoutes)
   .route("/api/v1/uploads", uploadsRoutes)
-  .route("/api/v1/sync", syncRoutes)
   .route("/mcp", mcpRoutes);
 
 app.onError(onError);

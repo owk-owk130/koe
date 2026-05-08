@@ -15,8 +15,6 @@ export const users = sqliteTable("users", {
 //   pending → transcribing → transcribed → analyzing → completed
 //                   ↓                ↓
 //          transcribe_failed   analyze_failed
-// 'failed' is retained for legacy single-phase rows; the orchestrator never
-// produces it for new jobs.
 export type JobStatus =
   | "pending"
   | "transcribing"
@@ -24,8 +22,7 @@ export type JobStatus =
   | "analyzing"
   | "completed"
   | "transcribe_failed"
-  | "analyze_failed"
-  | "failed";
+  | "analyze_failed";
 
 export const jobs = sqliteTable(
   "jobs",
@@ -61,7 +58,6 @@ export const chunks = sqliteTable(
     startSec: real("start_sec").notNull(),
     endSec: real("end_sec").notNull(),
     transcript: text("transcript"),
-    transcriptKey: text("transcript_key"),
     error: text("error"),
     createdAt: text("created_at").notNull().default(defaultNow),
   },
@@ -82,7 +78,6 @@ export const topics = sqliteTable(
     startSec: real("start_sec"),
     endSec: real("end_sec"),
     transcript: text("transcript").notNull(),
-    transcriptKey: text("transcript_key"),
     createdAt: text("created_at").notNull().default(defaultNow),
   },
   (table) => [index("idx_topics_job").on(table.jobId, table.topicIndex)],
