@@ -120,7 +120,9 @@ Workers secrets は `wrangler secret put` で設定。ローカル開発は `pac
 
 Desktop アプリの「設定 → API キー」で Gemini / Cloudflare の認証情報を入力すると、ジョブ作成時に
 リクエストヘッダ経由でサーバ側 env 既定値を上書きできる。未入力なら従来通り env が使われる。
-入力した値は OS keychain (Electron `safeStorage`) にローカル保存し、サーバには永続化しない。
+入力した値は OS keychain (Electron `safeStorage`) にローカル保存される。サーバ側はジョブ処理中のみ
+DurableObject storage に保持し（CF の at-rest 暗号化下）、ジョブ完了 / 全リトライ失敗時に破棄する
+（長期保管しない）。
 
 ## License
 
