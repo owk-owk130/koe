@@ -60,8 +60,13 @@ export function SettingsPanel() {
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
-    window.electronAPI.checkPermissions().then(setPermissions);
-    window.electronAPI.getSecretsStatus().then(setSecretsStatus);
+    Promise.all([
+      window.electronAPI.checkPermissions(),
+      window.electronAPI.getSecretsStatus(),
+    ]).then(([perms, status]) => {
+      setPermissions(perms);
+      setSecretsStatus(status);
+    });
   }, []);
 
   const requestMic = async () => {
@@ -113,6 +118,12 @@ export function SettingsPanel() {
   }, []);
 
   const savedRecently = savedAt !== null && Date.now() - savedAt < 3000;
+
+  // Saved-state inputs share a "再入力で上書き" placeholder so the UI doesn't
+  // hint at the actual stored value (which we never read back into the
+  // renderer). Unsaved inputs show a per-field example.
+  const placeholderFor = (saved: boolean | undefined, unsavedHint: string): string =>
+    saved ? "保存済み（再入力で上書き）" : unsavedHint;
 
   return (
     <div className="flex flex-1 flex-col gap-5 p-6">
@@ -166,7 +177,7 @@ export function SettingsPanel() {
             value={form.geminiApiKey}
             onChange={updateField("geminiApiKey")}
             type="password"
-            placeholder={secretsStatus?.geminiApiKey ? "保存済み（再入力で上書き）" : "AIza..."}
+            placeholder={placeholderFor(secretsStatus?.geminiApiKey, "AIza...")}
           />
           <SecretRow
             label="Gemini Model"
@@ -174,9 +185,7 @@ export function SettingsPanel() {
             value={form.geminiModel}
             onChange={updateField("geminiModel")}
             type="text"
-            placeholder={
-              secretsStatus?.geminiModel ? "保存済み（再入力で上書き）" : GEMINI_MODEL_PLACEHOLDER
-            }
+            placeholder={placeholderFor(secretsStatus?.geminiModel, GEMINI_MODEL_PLACEHOLDER)}
           />
           <SecretRow
             label="Cloudflare API Token"
@@ -184,9 +193,7 @@ export function SettingsPanel() {
             value={form.cfApiToken}
             onChange={updateField("cfApiToken")}
             type="password"
-            placeholder={
-              secretsStatus?.cfApiToken ? "保存済み（再入力で上書き）" : "Workers AI 権限のトークン"
-            }
+            placeholder={placeholderFor(secretsStatus?.cfApiToken, "Workers AI 権限のトークン")}
           />
           <SecretRow
             label="Cloudflare Account ID"
@@ -194,9 +201,7 @@ export function SettingsPanel() {
             value={form.cfAccountId}
             onChange={updateField("cfAccountId")}
             type="text"
-            placeholder={
-              secretsStatus?.cfAccountId ? "保存済み（再入力で上書き）" : "32 文字のアカウント ID"
-            }
+            placeholder={placeholderFor(secretsStatus?.cfAccountId, "32 文字のアカウント ID")}
           />
         </div>
         <div className="mt-4 flex items-center justify-between gap-3">
