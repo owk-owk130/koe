@@ -111,6 +111,7 @@ pending → transcribing → transcribed → analyzing → completed
 - ジョブは冪等性を担保（チャンクID + 状態管理）
 - transcribe (Whisper) と analyze (Gemini) は独立 phase で動く。transcribe 完了時点で transcript.json を R2 に commit し、analyze で失敗しても Whisper を再課金しない
 - 進捗通知はポーリング + ステータスAPI
+- BYOK 対応: Desktop の SettingsPanel で Gemini / CF キーを入力すると、リクエストヘッダ (`X-Gemini-Key` 等、`@koe/shared/byok-headers` で定義) 経由で env 既定値を上書きする。未入力なら env 既定値で動く。キーは Electron `safeStorage` に保存し、サーバには持たない
 
 ## Coding Rules
 

@@ -116,6 +116,12 @@ pnpm deploy:api
 
 Workers secrets は `wrangler secret put` で設定。ローカル開発は `packages/api/.dev.vars` を使用。
 
+#### BYOK (個別ユーザーが自分のキーで動かす)
+
+Desktop アプリの「設定 → API キー」で Gemini / Cloudflare の認証情報を入力すると、ジョブ作成時に
+リクエストヘッダ経由でサーバ側 env 既定値を上書きできる。未入力なら従来通り env が使われる。
+入力した値は OS keychain (Electron `safeStorage`) にローカル保存し、サーバには永続化しない。
+
 ## License
 
 MIT
