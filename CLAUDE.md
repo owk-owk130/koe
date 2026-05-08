@@ -101,7 +101,6 @@ pending → transcribing → transcribed → analyzing → completed
 
 - 各 phase 独立で max 3 回までリトライ、線形 backoff (30/60/90s)
 - analyze 失敗時は transcript を R2 に保持したまま、Whisper を再課金せず Gemini だけ再実行できる
-- `failed` は legacy 単一フェーズ用の値（新オーケストレーターでは出力しない）
 
 ### 設計方針
 
