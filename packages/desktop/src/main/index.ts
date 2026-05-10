@@ -3,6 +3,7 @@ import {
   BrowserWindow,
   desktopCapturer,
   dialog,
+  globalShortcut,
   ipcMain,
   safeStorage,
   shell,
@@ -16,8 +17,10 @@ import Store from "electron-store";
 import { isTokenExpired, parseUser } from "@koe/shared";
 import { IPC } from "~/shared/ipc-channels";
 import type { AiSecrets, AiSecretsStatus } from "~/shared/ipc-channels";
-import { createTray, updateTrayState } from "./tray";
+import { createTray, toggleRecording, updateTrayState } from "./tray";
 import { createPopoverWindow, togglePopover, getPopoverWindow } from "./popover";
+
+const TOGGLE_RECORDING_SHORTCUT = "CommandOrControl+Shift+K";
 
 // Secrets are persisted as base64-encoded ciphertext from `safeStorage` so the
 // raw key bytes never sit in the on-disk JSON. `safeStorage.encryptString` is
@@ -299,6 +302,15 @@ if (!gotLock) {
     createWindow();
     const popoverWindow = createPopoverWindow();
     createTray({ mainWindow, popoverWindow, togglePopover });
+
+    // register() returns false when the OS or another app already owns the
+    // accelerator. Tray menu / popover button still work, so degrade quietly.
+    const registered = globalShortcut.register(TOGGLE_RECORDING_SHORTCUT, () => {
+      toggleRecording(getPopoverWindow());
+    });
+    if (!registered) {
+      console.warn(`[koe] failed to register global shortcut ${TOGGLE_RECORDING_SHORTCUT}`);
+    }
   });
 
   app.on("activate", () => {
@@ -316,5 +328,9 @@ if (!gotLock) {
 
   app.on("before-quit", () => {
     isQuitting = true;
+  });
+
+  app.on("will-quit", () => {
+    globalShortcut.unregisterAll();
   });
 }

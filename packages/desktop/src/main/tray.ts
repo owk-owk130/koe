@@ -7,21 +7,27 @@ let tray: Tray | null = null;
 let currentState: RecordingState = "idle";
 let recordingSourceWindow: BrowserWindow | null = null;
 
+// Stop is dispatched to the window that started recording so the MediaRecorder
+// in that renderer receives it; start is dispatched to the popover (primary
+// quick-access surface). Same IPC channel as the tray menu so the global
+// shortcut and tray entry stay in lockstep.
+export function toggleRecording(popoverWindow: BrowserWindow | null) {
+  const isRecording = currentState === "recording";
+  if (isRecording && recordingSourceWindow) {
+    recordingSourceWindow.webContents.send(IPC.TRAY_TOGGLE_RECORDING);
+  } else {
+    popoverWindow?.webContents.send(IPC.TRAY_TOGGLE_RECORDING);
+  }
+}
+
 function buildContextMenu(mainWindow: BrowserWindow | null, popoverWindow: BrowserWindow | null) {
   const isRecording = currentState === "recording";
 
   return Menu.buildFromTemplate([
     {
       label: isRecording ? "録音停止" : "録音開始",
-      click: () => {
-        if (isRecording && recordingSourceWindow) {
-          // Stop: send only to the window that started recording
-          recordingSourceWindow.webContents.send(IPC.TRAY_TOGGLE_RECORDING);
-        } else {
-          // Start: send to popover (primary quick-access window)
-          popoverWindow?.webContents.send(IPC.TRAY_TOGGLE_RECORDING);
-        }
-      },
+      accelerator: "CommandOrControl+Shift+K",
+      click: () => toggleRecording(popoverWindow),
     },
     { type: "separator" },
     {
@@ -41,12 +47,21 @@ function buildContextMenu(mainWindow: BrowserWindow | null, popoverWindow: Brows
   ]);
 }
 
-function loadTrayIcon(): Electron.NativeImage {
+function resolveIconPath(filename: string): string {
   // In dev, resolve from source build directory; in prod, from extraResources
-  const iconPath = app.isPackaged
-    ? join(process.resourcesPath, "trayIconTemplate.png")
-    : join(__dirname, "../../build/trayIconTemplate.png");
-  const icon = nativeImage.createFromPath(iconPath);
+  return app.isPackaged
+    ? join(process.resourcesPath, filename)
+    : join(__dirname, "../../build", filename);
+}
+
+function loadTrayIcon(state: RecordingState): Electron.NativeImage {
+  // Recording icon is a colored (red) PNG: do NOT mark it as a template image
+  // or macOS will strip the color and render it monochrome. Idle / processing
+  // use the template image so it adapts to light/dark menu bars.
+  if (state === "recording") {
+    return nativeImage.createFromPath(resolveIconPath("trayIconRecording.png"));
+  }
+  const icon = nativeImage.createFromPath(resolveIconPath("trayIconTemplate.png"));
   icon.setTemplateImage(true);
   return icon;
 }
@@ -58,8 +73,7 @@ interface TrayWindows {
 }
 
 export function createTray({ mainWindow, popoverWindow, togglePopover }: TrayWindows) {
-  const icon = loadTrayIcon();
-  tray = new Tray(icon);
+  tray = new Tray(loadTrayIcon(currentState));
   tray.setToolTip("koe");
 
   // Left click: toggle popover
@@ -82,6 +96,7 @@ export function updateTrayState(
   _popoverWindow: BrowserWindow | null,
   sourceWindow: BrowserWindow | null,
 ) {
+  const prevState = currentState;
   currentState = state;
   if (state === "recording") {
     recordingSourceWindow = sourceWindow;
@@ -90,6 +105,11 @@ export function updateTrayState(
   }
   if (tray) {
     tray.setToolTip(state === "recording" ? "koe - 録音中" : "koe");
+    const wasRecording = prevState === "recording";
+    const isRecording = state === "recording";
+    if (wasRecording !== isRecording) {
+      tray.setImage(loadTrayIcon(state));
+    }
   }
 }
 
