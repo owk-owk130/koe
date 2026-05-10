@@ -10,6 +10,10 @@ extraResources:
     to: "trayIconTemplate.png"
   - from: "build/trayIconTemplate@2x.png"
     to: "trayIconTemplate@2x.png"
+  - from: "build/trayIconRecording.png"
+    to: "trayIconRecording.png"
+  - from: "build/trayIconRecording@2x.png"
+    to: "trayIconRecording@2x.png"
 mac:
   category: public.app-category.productivity
   target:
