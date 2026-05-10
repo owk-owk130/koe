@@ -17,10 +17,14 @@ import Store from "electron-store";
 import { isTokenExpired, parseUser } from "@koe/shared";
 import { IPC } from "~/shared/ipc-channels";
 import type { AiSecrets, AiSecretsStatus } from "~/shared/ipc-channels";
-import { createTray, toggleRecording, updateTrayState } from "./tray";
+import {
+  createTray,
+  setShortcutRegistered,
+  TOGGLE_RECORDING_ACCELERATOR,
+  toggleRecording,
+  updateTrayState,
+} from "./tray";
 import { createPopoverWindow, togglePopover, getPopoverWindow } from "./popover";
-
-const TOGGLE_RECORDING_SHORTCUT = "CommandOrControl+Shift+K";
 
 // Secrets are persisted as base64-encoded ciphertext from `safeStorage` so the
 // raw key bytes never sit in the on-disk JSON. `safeStorage.encryptString` is
@@ -305,11 +309,12 @@ if (!gotLock) {
 
     // register() returns false when the OS or another app already owns the
     // accelerator. Tray menu / popover button still work, so degrade quietly.
-    const registered = globalShortcut.register(TOGGLE_RECORDING_SHORTCUT, () => {
+    const registered = globalShortcut.register(TOGGLE_RECORDING_ACCELERATOR, () => {
       toggleRecording(getPopoverWindow());
     });
+    setShortcutRegistered(registered);
     if (!registered) {
-      console.warn(`[koe] failed to register global shortcut ${TOGGLE_RECORDING_SHORTCUT}`);
+      console.warn(`[koe] failed to register global shortcut ${TOGGLE_RECORDING_ACCELERATOR}`);
     }
   });
 

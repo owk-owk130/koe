@@ -3,9 +3,22 @@ import { join } from "path";
 import type { RecordingState } from "~/shared/ipc-channels";
 import { IPC } from "~/shared/ipc-channels";
 
+// Single source of truth for the toggle accelerator: re-used both for
+// `globalShortcut.register()` in main/index.ts and for the tray menu
+// `accelerator` label so they cannot drift.
+export const TOGGLE_RECORDING_ACCELERATOR = "CommandOrControl+Shift+K";
+
 let tray: Tray | null = null;
 let currentState: RecordingState = "idle";
 let recordingSourceWindow: BrowserWindow | null = null;
+let shortcutRegistered = false;
+
+// Toggle off the menu accelerator label when globalShortcut.register() failed
+// (e.g. another app already owns the keys), so the right-click menu stops
+// claiming a shortcut that no longer fires. The menu item itself still works.
+export function setShortcutRegistered(registered: boolean) {
+  shortcutRegistered = registered;
+}
 
 // Stop is dispatched to the window that started recording so the MediaRecorder
 // in that renderer receives it; start is dispatched to the popover (primary
@@ -26,7 +39,7 @@ function buildContextMenu(mainWindow: BrowserWindow | null, popoverWindow: Brows
   return Menu.buildFromTemplate([
     {
       label: isRecording ? "録音停止" : "録音開始",
-      accelerator: "CommandOrControl+Shift+K",
+      ...(shortcutRegistered ? { accelerator: TOGGLE_RECORDING_ACCELERATOR } : {}),
       click: () => toggleRecording(popoverWindow),
     },
     { type: "separator" },
